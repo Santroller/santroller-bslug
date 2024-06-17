@@ -120,7 +120,7 @@ static uint32_t cpu_isr_disable(void);
 static void cpu_isr_restore(uint32_t isr);
 static void onDevOpen(ios_fd_t fd, usr_t unused);
 uint16_t last = 0;
-
+uint8_t last_ext = 0;
 static void MyWPADRead(int wiiremote, WPADData_t *data) {
     if (fake_devices[wiiremote].valid) {
         uint32_t isr = cpu_isr_disable();
@@ -138,10 +138,26 @@ static void MyWPADRead(int wiiremote, WPADData_t *data) {
         cpu_isr_restore(isr);
     } else {
         WPADRead(wiiremote, data);
+        if (data->extension != last_ext) {
+            printf("             Got ext: %02x\r\n", data->extension);
+            last_ext = data->extension;
+        }
     }
 }
 
 static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
+    if (!started) {
+        printf("\r\n\r\n\r\n    Instrument Support Starting\r\n");
+        for (int i = 0; i < MAX_FAKE_WIIMOTES; i++) {
+            fake_devices[i].valid = 0;
+            fake_devices[i].real = 0;
+            fake_devices[i].wiimote = i;
+            fake_devices[i].autoSamplingBuffer = 0;
+        }
+        /* On first call only, initialise USB and globals. */
+        started = 1;
+        IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL);
+    }
     if (fake_devices[wiimote].valid) {
         uint32_t isr = cpu_isr_disable();
         *extension = fake_devices[wiimote].extension;
@@ -150,16 +166,6 @@ static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
     }
     WPADStatus_t ret = WPADProbe(wiimote, extension);
     fake_devices[wiimote].real = ret == WPAD_STATUS_OK;
-    if (!started) {
-        printf("\r\n\r\n\r\n    Starting\r\n");
-        for (int i = 0; i < MAX_FAKE_WIIMOTES; i++) {
-            fake_devices[i].valid = 0;
-            fake_devices[i].wiimote = i;
-        }
-        /* On first call only, initialise USB and globals. */
-        started = 1;
-        IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL);
-    }
     return ret;
 }
 
@@ -1036,7 +1042,9 @@ static void onDevUsbPoll(ios_ret_t ret, usr_t user) {
     usb_input_device_t *device = (usb_input_device_t *)user;
     if (ret >= 0) {
 
+        uint32_t isr = cpu_isr_disable();
         device->driver->usb_async_resp(device);
+        cpu_isr_restore(isr);
         if (device->autoSamplingBuffer) {
             int autoSampleIndex = device->autoSamplingBufferIndex;
             int autoSampleNext = (autoSampleIndex + 1) % device->autoSamplingBufferCount;

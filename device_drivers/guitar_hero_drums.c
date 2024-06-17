@@ -32,7 +32,7 @@ struct drum_input_report {
 	uint8_t unused3[2];
 	uint16_t unused4[4];
 
-} ATTRIBUTE_PACKED;
+} __attribute__((packed));
 
 enum drum_buttons_e {
 	DRUM_BUTTON_YELLOW,

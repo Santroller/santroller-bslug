@@ -42,7 +42,7 @@ struct turntable_input_report {
 	uint16_t : 6;
 	uint16_t : 16;
 
-} ATTRIBUTE_PACKED;
+} __attribute__((packed));
 
 enum turntable_buttons_e {
 	TURNTABLE_BUTTON_SQUARE,
@@ -223,25 +223,17 @@ bool turntable_report_input(usb_input_device_t *device)
 {
 	struct turntable_private_data_t *priv = (void *)device->private_data;
 	uint16_t wiimote_buttons = 0;
-	uint16_t acc_x, acc_y, acc_z;
 	union wiimote_extension_data_t extension_data;
 
 	bm_map_wiimote(TURNTABLE_BUTTON__NUM, priv->input.buttons,
 				   turntable_mapping.wiimote_button_map,
 				   &wiimote_buttons);
-	acc_x = ACCEL_ZERO_G;
-	acc_y = ACCEL_ZERO_G;
-	acc_z = ACCEL_ZERO_G;
-
-	fake_wiimote_report_accelerometer(device->wiimote, acc_x, acc_y, acc_z);
 
 	bm_map_turntable(TURNTABLE_BUTTON__NUM, priv->input.buttons,
 				  TURNTABLE_ANALOG_AXIS__NUM, priv->input.analog_axis,
 				  turntable_mapping.turntable_button_map,
 				  turntable_mapping.turntable_analog_axis_map,
 				  &extension_data.turntable);
-	fake_wiimote_report_input_ext(device->wiimote, wiimote_buttons,
-								  &extension_data, sizeof(extension_data.turntable));
 
 	return true;
 }

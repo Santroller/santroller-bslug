@@ -42,7 +42,7 @@ struct guitar_input_report {
 	uint16_t acc_y;
 	uint16_t z_gyro;
 
-} ATTRIBUTE_PACKED;
+} __attribute__((packed));
 
 enum guitar_buttons_e {
 	GUITAR_BUTTON_YELLOW,
