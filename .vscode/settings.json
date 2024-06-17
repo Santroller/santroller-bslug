@@ -1,0 +1,28 @@
+{
+    "files.associations": {
+        "pad.h": "c",
+        "string.h": "c",
+        "utils.h": "c",
+        "cstdint": "c",
+        "defines.h": "c",
+        "stdint.h": "c",
+        "wiimote.h": "c",
+        "usb_hid.h": "c",
+        "*.tcc": "c",
+        "locale": "c",
+        "ostream": "c",
+        "wpad.h": "c",
+        "future": "c",
+        "hash_map": "c",
+        "bitset": "c",
+        "algorithm": "c",
+        "hash_set": "c",
+        "format": "c",
+        "__bit_reference": "c",
+        "map": "c",
+        "set": "c",
+        "unordered_map": "c",
+        "unordered_set": "c",
+        "vector": "c"
+    }
+}

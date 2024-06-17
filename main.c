@@ -42,14 +42,23 @@
  * compatible. */
 
 #include <bslug.h>
+#include <rvl/Pad.h>
+#include <rvl/WPAD.h>
 #include <rvl/cache.h>
 #include <rvl/ipc.h>
-#include <rvl/Pad.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "defines.h"
+#include "usb_hid.h"
+#include <rvl/OSTime.h>
 
 BSLUG_MODULE_GAME("????");
-BSLUG_MODULE_NAME("USB GCN Adapter Support");
+BSLUG_MODULE_NAME("USB Instrument Support");
 BSLUG_MODULE_VERSION("v1.0");
-BSLUG_MODULE_AUTHOR("Chadderz");
+BSLUG_MODULE_AUTHOR("sanjay900");
 BSLUG_MODULE_LICENSE("BSD");
 
 /*============================================================================*/
@@ -62,320 +71,348 @@ BSLUG_MODULE_LICENSE("BSD");
 #define SUPPORT_DEV_USB_HID5
 
 #define IOS_ALIGN __attribute__((aligned(32)))
-
-/* You can't really change this! */
-#define GCN_CONTROLLER_COUNT 4
-/* L and R slider's "pressed" state. */
-#define GCN_TRIGGER_THRESHOLD 170
-/* How long (in time base units) to go without inputs before reporting a disconnect. */
-#define ms * (243000/4)
-#define GCN_TIMEOUT (1500 ms)
-/* Commands that the adapter supports. */
-#define WUP_028_CMD_RUMBLE 0x11
-#define WUP_028_CMD_INIT 0x13
-/* VendorID and ProductID of the adatper. */
-#define WUP_028_ID 0x057e0337
-/* Size of the controller data returned by the adapter. */
-#define WUP_028_POLL_SIZE 0x25
-/* Size of the rumble message circular buffer. */
-#define RUMBLE_BUFFER 16
-/* Number of polls to wait before giving up on outstanding rumble command. */
-#define RUMBLE_DELAY 3
+#define MAX_FAKE_WIIMOTES 4
 /* Path to the USB device interface. */
 #define DEV_USB_HID_PATH "/dev/usb/hid"
 
+#define BUFFER_SIZE 5
+#define USB_MAX_DEVICES 32
+#define DEV_USB_HID4_DEVICE_CHANGE_SIZE 0x180
+#define USB_DESCRIPTOR_DEVICE 0x01            // bDescriptorType for a Device Descriptor.
+#define USB_DESCRIPTOR_CONFIGURATION 0x02     // bDescriptorType for a Configuration Descriptor.
+#define USB_DESCRIPTOR_STRING 0x03            // bDescriptorType for a String Descriptor.
+#define USB_DESCRIPTOR_INTERFACE 0x04         // bDescriptorType for an Interface Descriptor.
+#define USB_DESCRIPTOR_ENDPOINT 0x05          // bDescriptorType for an Endpoint Descriptor.
+#define USB_DESCRIPTOR_DEVICE_QUALIFIER 0x06  // bDescriptorType for a Device Qualifier.
+#define USB_DESCRIPTOR_OTHER_SPEED 0x07       // bDescriptorType for a Other Speed Configuration.
+#define USB_DESCRIPTOR_INTERFACE_POWER 0x08   // bDescriptorType for Interface Power.
+#define USB_DESCRIPTOR_OTG 0x09               // bDescriptorType for an OTG Descriptor.
+
+#define HID_DESCRIPTOR_HID 0x21
+
+#define HID_INTF 0x03
+
+#define USB_ENDPOINT_IN 0x80
+#define USB_ENDPOINT_OUT 0x00
 /*============================================================================*/
 /* Globals */
 /*============================================================================*/
 
 static ios_fd_t dev_usb_hid_fd = -1;
 static int8_t started = 0;
-static PADData_t gcn_data[GCN_CONTROLLER_COUNT];
-static uint32_t gcn_data_written;
-static uint32_t gcn_adapter_id = -1;
 #if defined(SUPPORT_DEV_USB_HID5) && defined(SUPPORT_DEV_USB_HID4)
 #define HAVE_VERSION
 static int8_t version;
 #endif
 int8_t error;
 int8_t errorMethod;
-/* Circular buffer of rumble outputs. */
-static uint8_t rumble_sent = 0;
-static uint8_t rumble_recv = 0;
-static uint8_t rumble_buffer[RUMBLE_BUFFER][GCN_CONTROLLER_COUNT];
-/* Don't send next rumble until old one returns or timeout passes. */
-static uint8_t rumble_delay;
-static uint8_t rumble_token;
-/* Messages for device. */
-static uint8_t init_msg_buffer[1] IOS_ALIGN = { WUP_028_CMD_INIT };
-/* Pad buffer size to cache line size of IOS core. Otherwise IOS will write ver
- * later data, or we could read a stale value. */
-static uint8_t poll_msg_buffer[-(-WUP_028_POLL_SIZE & ~0x1f)] IOS_ALIGN;
-static uint8_t rumble_msg_buffer[1 + GCN_CONTROLLER_COUNT] IOS_ALIGN =
-  { WUP_028_CMD_RUMBLE };
-
+static bool initCalled = false;
+static const usb_device_driver_t *usb_device_drivers[] = {
+    &gh_guitar_usb_device_driver,
+    &gh_drum_usb_device_driver,
+    &turntable_usb_device_driver};
+static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 /*============================================================================*/
 /* Top level interface to game */
 /*============================================================================*/
 
-static uint32_t mftb(void);
 static uint32_t cpu_isr_disable(void);
 static void cpu_isr_restore(uint32_t isr);
 static void onDevOpen(ios_fd_t fd, usr_t unused);
+uint16_t last = 0;
 
-static void myPADInit(void) {
-  /* FIXME: Until we've killed all PAD methods, better init still. */
-  PADInit();
-}
-static void myPADRead(PADData_t result[GCN_CONTROLLER_COUNT]) {
-  uint32_t isr = cpu_isr_disable();
-  if (!started) {
-    /* On first call only, initialise USB and globals. */
-    started = 1;
-    for (int i = 0; i < GCN_CONTROLLER_COUNT; i++)
-      gcn_data[i].error = PADData_ERROR_NO_CONNECTION;
-    gcn_data_written = mftb();
-    IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL);
-  }
-  if (errorMethod > 0) {
-    /* On a USB error, disconnect all controllers. */
-    errorMethod = -errorMethod;
-    for (int i = 0; i < GCN_CONTROLLER_COUNT; i++)
-      gcn_data[i].error = PADData_ERROR_NO_CONNECTION;
-  } else if (mftb() - gcn_data_written > GCN_TIMEOUT) {
-    for (int i = 0; i < GCN_CONTROLLER_COUNT; i++)
-      gcn_data[i].error = PADData_ERROR_NO_CONNECTION;
-  }
-  for (int i = 0; i < GCN_CONTROLLER_COUNT; i++) {
-    /* Copy last seen controller inputs. */
-    result[i] = gcn_data[i];
-    if (gcn_data[i].error == 0)
-      gcn_data[i].error = PADData_ERROR_2;
-  }
-  cpu_isr_restore(isr);
-}
-static void myPADControlMotor(int pad, int control) {
-  /* Check for valid pad. */
-  if ((unsigned int)pad >= GCN_CONTROLLER_COUNT) return;
-  uint32_t isr = cpu_isr_disable();
-  unsigned int prev = (unsigned int)(rumble_sent - 1) % RUMBLE_BUFFER;
-  /* Check if this command is redundant. */
-  if (rumble_buffer[prev][pad] == (uint8_t)control) goto exit;
-  /* Put this rumble command into a queue. */
-  for (int i = 0; i < GCN_CONTROLLER_COUNT; i++)
-    if (i == pad)
-      rumble_buffer[rumble_sent][i] = control;
-    else
-      rumble_buffer[rumble_sent][i] = rumble_buffer[prev][i];
-  rumble_sent = (rumble_sent + 1) % RUMBLE_BUFFER;
-exit:
-  cpu_isr_restore(isr);
+static void MyWPADRead(int wiiremote, WPADData_t *data) {
+    if (fake_devices[wiiremote].valid) {
+        uint32_t isr = cpu_isr_disable();
+        memset(data, 0, WPADDataFormatSize(fake_devices[wiiremote].currentFormat));
+        if (last != fake_devices[wiiremote].wpadData.extension_data.guitar.buttons) {
+            last = fake_devices[wiiremote].wpadData.extension_data.guitar.buttons;
+            printf("             %d\r\n", last);
+        }
+        if (fake_devices[wiiremote].currentFormat == fake_devices[wiiremote].format) {
+            memcpy(data, &fake_devices[wiiremote].wpadData, WPADDataFormatSize(fake_devices[wiiremote].currentFormat));
+        } else {
+            // Copy the fields common to all formats.
+            memcpy(data, &fake_devices[wiiremote].wpadData, WPADDataFormatSize(WPAD_FORMAT_NONE));
+        }
+        cpu_isr_restore(isr);
+    } else {
+        WPADRead(wiiremote, data);
+    }
 }
 
-BSLUG_MUST_REPLACE(PADInit, myPADInit);
-BSLUG_MUST_REPLACE(PADRead, myPADRead);
-BSLUG_REPLACE(PADControlMotor, myPADControlMotor);
+static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
+    if (fake_devices[wiimote].valid) {
+        uint32_t isr = cpu_isr_disable();
+        *extension = fake_devices[wiimote].extension;
+        cpu_isr_restore(isr);
+        return WPAD_STATUS_OK;
+    }
+    WPADStatus_t ret = WPADProbe(wiimote, extension);
+    fake_devices[wiimote].real = ret == WPAD_STATUS_OK;
+    if (!started) {
+        printf("\r\n\r\n\r\n    Starting\r\n");
+        for (int i = 0; i < MAX_FAKE_WIIMOTES; i++) {
+            fake_devices[i].valid = 0;
+            fake_devices[i].wiimote = i;
+        }
+        /* On first call only, initialise USB and globals. */
+        started = 1;
+        IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL);
+    }
+    return ret;
+}
+
+static void MyWPADInit(void) {
+    WPADInit();
+    initCalled = true;
+}
+
+static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback) {
+    printf("                  connect callback %d!\r\n", wiimote);
+    // remember their callback
+    fake_devices[wiimote].connectCallback = newCallback;
+    // TODO: we cant just pass these through, instead we need to replace them in a way that the console wont overwrite our controllers
+    return WPADSetConnectCallback(wiimote, newCallback);
+}
+
+static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback) {
+    printf("                    ext callback %d!\r\n", wiimote);
+    if (fake_devices[wiimote].valid) {
+        // remember their callback
+        fake_devices[wiimote].extensionCallback = newCallback;
+        return WPAD_STATUS_OK;
+    }
+    return WPADSetExtensionCallback(wiimote, newCallback);
+}
+
+static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
+    printf("                  sampling callback %d!\r\n", wiimote);
+    // remember their callback
+    if (fake_devices[wiimote].valid) {
+        fake_devices[wiimote].samplingCallback = newCallback;
+        return WPAD_STATUS_OK;
+    }
+    return WPADSetSamplingCallback(wiimote, newCallback);
+}
+
+static void MyWPADSetAutoSamplingBuf(int wiimote, void *buffer, int count) {
+    printf("                  sampling buf %d %d!\r\n", wiimote, count);
+    if (!fake_devices[wiimote].valid) {
+        WPADSetAutoSamplingBuf(wiimote, buffer, count);
+        return;
+    }
+    uint32_t isr = cpu_isr_disable();
+    fake_devices[wiimote].autoSamplingBuffer = buffer;
+    fake_devices[wiimote].autoSamplingBufferCount = count;
+    cpu_isr_restore(isr);
+}
+
+static int MyWPADGetLatestIndexInBuf(int wiimote) {
+    if (!fake_devices[wiimote].valid) {
+        return WPADGetLatestIndexInBuf(wiimote);
+    }
+    return fake_devices[wiimote].autoSamplingBufferIndex;
+}
+static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPADAccGravityUnit_t *result) {
+    if (!fake_devices[wiimote].valid) {
+        WPADGetAccGravityUnit(wiimote, extension, result);
+        return;
+    }
+    uint32_t isr = cpu_isr_disable();
+    if (extension == WPAD_EXTENSION_NONE) {
+        *result = fake_devices[wiimote].gravityUnit[0];
+    } else if (extension == WPAD_EXTENSION_NUNCHUCK) {
+        *result = fake_devices[wiimote].gravityUnit[1];
+    } else {
+        result->acceleration[0] = 0;
+        result->acceleration[1] = 0;
+        result->acceleration[2] = 0;
+    }
+    cpu_isr_restore(isr);
+}
+
+static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
+    printf("       Data Format set to %02x\r\n", format);
+    if (fake_devices[wiimote].valid) {
+        fake_devices[wiimote].currentFormat = format;
+        return WPAD_STATUS_OK;
+    }
+    return WPADSetDataFormat(wiimote, format);
+}
+
+static WPADDataFormat_t MyWPADGetDataFormat(int wiimote) {
+    if (!fake_devices[wiimote].valid) {
+        return WPADGetDataFormat(wiimote);
+    }
+    return fake_devices[wiimote].currentFormat;
+}
+
+static int MyWPADControlDpd(int wiimote, int command, WPADControlDpdCallback_t callback) {
+    printf("          dpd %d %p\r\n", command, callback);
+    if (!fake_devices[wiimote].valid) {
+        return WPADControlDpd(wiimote, command, callback);
+    }
+    fake_devices[wiimote].dpdEnabled = command > 0;
+    fake_devices[wiimote].controlDpdCallback = callback;
+    if (callback) {
+        callback(wiimote, WPAD_STATUS_OK);
+    }
+    return WPAD_STATUS_OK;
+}
+static bool MyWPADIsDpdEnabled(int wiimote) {
+    if (!fake_devices[wiimote].valid) {
+        return WPADIsDpdEnabled(wiimote);
+    }
+    return fake_devices[wiimote].dpdEnabled;
+}
+
+BSLUG_MUST_REPLACE(WPADRead, MyWPADRead);
+BSLUG_MUST_REPLACE(WPADInit, MyWPADInit);
+BSLUG_MUST_REPLACE(WPADSetConnectCallback, MyWPADSetConnectCallback);
+BSLUG_MUST_REPLACE(WPADSetExtensionCallback, MyWPADSetExtensionCallback);
+BSLUG_REPLACE(WPADSetSamplingCallback, MyWPADSetSamplingCallback);
+BSLUG_REPLACE(WPADSetAutoSamplingBuf, MyWPADSetAutoSamplingBuf);
+BSLUG_REPLACE(WPADGetLatestIndexInBuf, MyWPADGetLatestIndexInBuf);
+BSLUG_MUST_REPLACE(WPADSetDataFormat, MyWPADSetDataFormat);
+BSLUG_REPLACE(WPADGetDataFormat, MyWPADGetDataFormat);
+BSLUG_MUST_REPLACE(WPADProbe, MyWPADProbe);
+BSLUG_MUST_REPLACE(WPADGetAccGravityUnit, MyWPADGetAccGravityUnit);
+BSLUG_MUST_REPLACE(WPADControlDpd, MyWPADControlDpd);
+BSLUG_MUST_REPLACE(WPADIsDpdEnabled, MyWPADIsDpdEnabled);
 
 /*============================================================================*/
 /* USB support */
 /*============================================================================*/
 
-static uint32_t mftb(void) {
-  uint32_t result;
-  asm volatile ("mftb %0" : "=r"(result));
-  return result;
-}
 static uint32_t cpu_isr_disable(void) {
-  uint32_t isr, tmp;
-  asm volatile("mfmsr %0; rlwinm %1, %0, 0, 0xFFFF7FFF; mtmsr %1" : "=r"(isr), "=r"(tmp));
-  return isr;
+    uint32_t isr, tmp;
+    asm volatile("mfmsr %0; rlwinm %1, %0, 0, 0xFFFF7FFF; mtmsr %1" : "=r"(isr), "=r"(tmp));
+    return isr;
 }
 static void cpu_isr_restore(uint32_t isr) {
-  uint32_t tmp;
-  asm volatile ("mfmsr %0; rlwimi %0, %1, 0, 0x8000; mtmsr %0" : "=&r"(tmp) : "r" (isr));
+    uint32_t tmp;
+    asm volatile("mfmsr %0; rlwimi %0, %1, 0, 0x8000; mtmsr %0" : "=&r"(tmp) : "r"(isr));
 }
 
 static void callbackIgnore(ios_ret_t ret, usr_t unused);
-static void onDevUsbInit(ios_ret_t ret, usr_t unused);
 static void onDevUsbPoll(ios_ret_t ret, usr_t unused);
 
 #ifdef SUPPORT_DEV_USB_HID4
-  /* The basic flow for version 4:
-   *  1) ioctl GET_VERSION
-   *       Check the return value is 0x00040001.
-   *  2) ioctl GET_DEVICE_CHANGE
-   *       Returns immediately + every time a device is added or removed. Output
-   *       describes what is connected.
-   *  3) Find an interesting device.
-   *  4) ioctl INTERRUPT_OUT
-   *       USB interrupt packet to send initialise command to WUP-028.
-   *  5) ioctl INTERRUPT_IN
-   *       USB interrupt packet to poll device for inputs.
-   */
+/* The basic flow for version 4:
+ *  1) ioctl GET_VERSION
+ *       Check the return value is 0x00040001.
+ *  2) ioctl GET_DEVICE_CHANGE
+ *       Returns immediately + every time a device is added or removed. Output
+ *       describes what is connected.
+ *  3) Find an interesting device.
+ *  4) ioctl INTERRUPT_OUT
+ *       USB interrupt packet to send initialise command to WUP-028.
+ *  5) ioctl INTERRUPT_IN
+ *       USB interrupt packet to poll device for inputs.
+ */
 
-  /* Size of the adapter's description. */
-# define WUP_028_DESCRIPTOR_SIZE 0x44
-  /* Endpoint numbering for the device. */
-# define WUP_028_ENDPOINT_OUT 0x2
-# define WUP_028_ENDPOINT_IN 0x81
-  /* Size of the DeviceChange ioctl's return (in words). */
-# define DEV_USB_HID4_DEVICE_CHANGE_SIZE 0x180
-  /* IOCTL numbering for the device. */
-# define DEV_USB_HID4_IOCTL_GET_DEVICE_CHANGE 0
-# define DEV_USB_HID4_IOCTL_INTERRUPT_IN 3
-# define DEV_USB_HID4_IOCTL_INTERRUPT_OUT 4
-# define DEV_USB_HID4_IOCTL_GET_VERSION 6
-  /* Version id. */
-# define DEV_USB_HID4_VERSION 0x00040001
+/* Size of the DeviceChange ioctl's return (in words). */
+#define DEV_USB_HID4_DEVICE_CHANGE_SIZE 0x180
+/* IOCTL numbering for the device. */
+#define DEV_USB_HID4_IOCTL_GET_DEVICE_CHANGE 0
+#define DEV_USB_HID4_IOCTL_CONTROL 2
+#define DEV_USB_HID4_IOCTL_INTERRUPT_IN 3
+#define DEV_USB_HID4_IOCTL_INTERRUPT_OUT 4
+#define DEV_USB_HID4_IOCTL_GET_VERSION 6
+/* Version id. */
+#define DEV_USB_HID4_VERSION 0x00040001
 
 static uint32_t dev_usb_hid4_devices[DEV_USB_HID4_DEVICE_CHANGE_SIZE] IOS_ALIGN;
 struct interrupt_msg4 {
-  uint8_t padding[16];
-  uint32_t device;
-  uint32_t endpoint;
-  uint32_t length;
-  void *ptr;
-};
-
-static struct interrupt_msg4 init_msg4 IOS_ALIGN = {
-  .device = -1,
-  .endpoint = WUP_028_ENDPOINT_OUT,
-  .length = sizeof(init_msg_buffer),
-  .ptr = init_msg_buffer
-};
-
-static struct interrupt_msg4 poll_msg4 IOS_ALIGN = {
-  .device = -1,
-  .endpoint = WUP_028_ENDPOINT_IN,
-  .length = WUP_028_POLL_SIZE,
-  .ptr = poll_msg_buffer
-};
-
-static struct interrupt_msg4 rumble_msg4 IOS_ALIGN = {
-  .device = -1,
-  .endpoint = WUP_028_ENDPOINT_OUT,
-  .length = sizeof(rumble_msg_buffer),
-  .ptr = rumble_msg_buffer
+    uint8_t padding[16];
+    uint32_t device;
+    uint32_t endpoint;
+    uint32_t length;
+    void *ptr;
 };
 
 static void onDevGetVersion4(ios_ret_t ret, usr_t unused);
 static void onDevUsbChange4(ios_ret_t ret, usr_t unused);
 
 static int checkVersion4(ios_cb_t cb, usr_t data) {
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID4_IOCTL_GET_VERSION,
-    NULL, 0,
-    NULL, 0,
-    cb, data
-  );
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID4_IOCTL_GET_VERSION,
+        NULL, 0,
+        NULL, 0,
+        cb, data);
 }
 static int getDeviceChange4(ios_cb_t cb, usr_t data) {
-  return  IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID4_IOCTL_GET_DEVICE_CHANGE,
-    NULL, 0,
-    dev_usb_hid4_devices, sizeof(dev_usb_hid4_devices),
-    cb, data
-  );
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID4_IOCTL_GET_DEVICE_CHANGE,
+        NULL, 0,
+        dev_usb_hid4_devices, sizeof(dev_usb_hid4_devices),
+        cb, data);
 }
-
-static int sendInit4(ios_cb_t cb, usr_t data) {
-  init_msg4.device = gcn_adapter_id;
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_OUT,
-    &init_msg4, sizeof(init_msg4),
-    NULL, 0,
-    cb, data
-  );
-}
-
-static int sendPoll4(ios_cb_t cb, usr_t data) {
-  poll_msg4.device = gcn_adapter_id;
-  DCFlushRange(poll_msg_buffer, sizeof(poll_msg_buffer));
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_IN,
-    &poll_msg4, sizeof(poll_msg4),
-    NULL, 0,
-    cb, data
-  );
-}
-
-static int sendRumble4(ios_cb_t cb, usr_t data) {
-  DCFlushRange(rumble_msg_buffer, 0x20);
-  rumble_msg4.device = gcn_adapter_id;
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_OUT,
-    &rumble_msg4, sizeof(rumble_msg4),
-    NULL, 0,
-    cb, data
-  );
-}
-
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
-  /* The basic flow for version 5:
-   *  1) ioctl GET_VERSION
-   *       Check the return value is 0x00050001.
-   *  2) ioctl GET_DEVICE_CHANGE
-   *       Returns immediately + every time a device is added or removed. Output
-   *       describes what is connected.
-   *  3) ioctl ATTACH_FINISH
-   *       Don't know why, but you have to do this!
-   *  4) Find an interesting device.
-   *  5) ioctl SET_RESUME
-   *       Turn the device on.
-   *  5) ioctl GET_DEVICE_PARAMETERS
-   *       You have to do this, even if you don't care about the result.
-   *  6) ioctl INTERRUPT
-   *       USB interrupt packet to send initialise command to WUP-028.
-   *  7) ioctl INTERRUPT
-   *       USB interrupt packet to  poll device for inputs.
-   */
+/* The basic flow for version 5:
+ *  1) ioctl GET_VERSION
+ *       Check the return value is 0x00050001.
+ *  2) ioctl GET_DEVICE_CHANGE
+ *       Returns immediately + every time a device is added or removed. Output
+ *       describes what is connected.
+ *  3) ioctl ATTACH_FINISH
+ *       Don't know why, but you have to do this!
+ *  4) Find an interesting device.
+ *  5) ioctl SET_RESUME
+ *       Turn the device on.
+ *  5) ioctl GET_DEVICE_PARAMETERS
+ *       You have to do this, even if you don't care about the result.
+ *  6) ioctl INTERRUPT
+ *       USB interrupt packet to send initialise command to WUP-028.
+ *  7) ioctl INTERRUPT
+ *       USB interrupt packet to  poll device for inputs.
+ */
 
-  /* Size of the DeviceChange ioctl's return (in strctures). */
-# define DEV_USB_HID5_DEVICE_CHANGE_SIZE 0x20
-  /* Total size of all IOS buffers (in words). */
-# define DEV_USB_HID5_TMP_BUFFER_SIZE 0x20
-  /* IOCTL numbering for the device. */
-# define DEV_USB_HID5_IOCTL_GET_VERSION 0
-# define DEV_USB_HID5_IOCTL_GET_DEVICE_CHANGE 1
-# define DEV_USB_HID5_IOCTL_GET_DEVICE_PARAMETERS 3
-# define DEV_USB_HID5_IOCTL_ATTACH_FINISH 6
-# define DEV_USB_HID5_IOCTL_SET_RESUME 16
-# define DEV_USB_HID5_IOCTL_INTERRUPT 19
-  /* Version id. */
-# define DEV_USB_HID5_VERSION 0x00050001
+/* Size of the DeviceChange ioctl's return (in strctures). */
+#define DEV_USB_HID5_DEVICE_CHANGE_SIZE 0x20
+/* Total size of all IOS buffers (in words). */
+#define DEV_USB_HID5_TMP_BUFFER_SIZE 0x20
+/* IOCTL numbering for the device. */
+#define DEV_USB_HID5_IOCTL_GET_VERSION 0
+#define DEV_USB_HID5_IOCTL_GET_DEVICE_CHANGE 1
+#define DEV_USB_HID5_IOCTL_GET_DEVICE_PARAMETERS 3
+#define DEV_USB_HID5_IOCTL_ATTACH_FINISH 6
+#define DEV_USB_HID5_IOCTL_SET_RESUME 16
+#define DEV_USB_HID5_IOCTL_CONTROL 18
+#define DEV_USB_HID5_IOCTL_INTERRUPT 19
+/* Version id. */
+#define DEV_USB_HID5_VERSION 0x00050001
 
-# define OS_IPC_HEAP_HIGH ((void **)0x80003134)
+#define OS_IPC_HEAP_HIGH ((void **)0x80003134)
 
 static struct {
-  uint32_t id;
-  uint32_t vid_pid;
-  uint32_t _unknown8;
+    uint32_t id;
+    uint32_t vid_pid;
+    uint32_t _unknown8;
 } *dev_usb_hid5_devices;
 /* This buffer gets managed pretty carefully. During init it's split 0x20 bytes
  * to 0x60 bytes to store the descriptor. The rest of the time it's split
  * evenly, one half for rumble messages and one half for polls. Be careful! */
 static uint32_t *dev_usb_hid5_buffer;
-static ioctlv dev_usb_hid5_argv[2] IOS_ALIGN;
-/* Polls may be sent at the same time as rumbles, so need two ioctlv arrays. */
-static ioctlv dev_usb_hid5_poll_argv[2] IOS_ALIGN;
 
 /* Annoyingly some of the buffers for v5 MUST be in MEM2, so we wrap _start to
  * allocate these before the application boots. */
 void _start(void);
 
 static void my_start(void) {
-  /* Allocate some area in MEM2. */
-  dev_usb_hid5_devices = *OS_IPC_HEAP_HIGH;
-  dev_usb_hid5_devices -= DEV_USB_HID5_DEVICE_CHANGE_SIZE;
-  *OS_IPC_HEAP_HIGH = dev_usb_hid5_devices;
+    /* Allocate some area in MEM2. */
+    dev_usb_hid5_devices = *OS_IPC_HEAP_HIGH;
+    dev_usb_hid5_devices -= DEV_USB_HID5_DEVICE_CHANGE_SIZE;
+    *OS_IPC_HEAP_HIGH = dev_usb_hid5_devices;
 
-  dev_usb_hid5_buffer = *OS_IPC_HEAP_HIGH;
-  dev_usb_hid5_buffer -= DEV_USB_HID5_TMP_BUFFER_SIZE;
-  *OS_IPC_HEAP_HIGH = dev_usb_hid5_buffer;
+    dev_usb_hid5_buffer = *OS_IPC_HEAP_HIGH;
+    dev_usb_hid5_buffer -= DEV_USB_HID5_TMP_BUFFER_SIZE;
+    *OS_IPC_HEAP_HIGH = dev_usb_hid5_buffer;
 
-  _start();
+    _start();
 }
 
 BSLUG_MUST_REPLACE(_start, my_start);
@@ -386,97 +423,203 @@ static void onDevUsbChange5(ios_ret_t ret, usr_t unused);
 static void onDevUsbResume5(ios_ret_t ret, usr_t unused);
 static void onDevUsbParams5(ios_ret_t ret, usr_t unused);
 
+static inline void build_v5_ctrl_transfer(struct usb_hid_v5_transfer *transfer, int dev_id,
+                                          uint8_t bmRequestType, uint8_t bmRequest, uint16_t wValue, uint16_t wIndex) {
+    memset(transfer, 0, sizeof(*transfer));
+    transfer->dev_id = dev_id;
+    transfer->ctrl.bmRequestType = bmRequestType;
+    transfer->ctrl.bmRequest = bmRequest;
+    transfer->ctrl.wValue = wValue;
+    transfer->ctrl.wIndex = wIndex;
+}
+
+static inline void build_v5_intr_transfer(struct usb_hid_v5_transfer *transfer, int dev_id, int out) {
+    memset(transfer, 0, sizeof(*transfer));
+    transfer->dev_id = dev_id;
+    transfer->intr.out = out;
+}
+
+static inline int usb_hid_v5_ctrl_transfer_async(usb_input_device_t *device, uint8_t bmRequestType,
+                                                 uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength,
+                                                 void *rpData) {
+    struct usb_hid_v5_transfer transfer ATTRIBUTE_ALIGN(32);
+    ioctlv vectors[2];
+    int out = !(bmRequestType & USB_ENDPOINT_IN);
+
+    build_v5_ctrl_transfer(&transfer, device->dev_id, bmRequestType, bmRequest, wValue, wIndex);
+
+    vectors[0].data = &transfer;
+    vectors[0].len = sizeof(transfer);
+    vectors[1].data = rpData;
+    vectors[1].len = wLength;
+
+    return IOS_IoctlvAsync(dev_usb_hid_fd, DEV_USB_HID5_IOCTL_CONTROL, 1 - out, 1 + out, vectors,
+                           onDevUsbPoll, device);
+}
+
+static inline int usb_hid_v5_ctrl_transfer(usb_input_device_t *device, uint8_t bmRequestType, uint8_t bmRequest,
+                                           uint16_t wValue, uint16_t wIndex, uint16_t wLength, void *rpData) {
+    struct usb_hid_v5_transfer transfer ATTRIBUTE_ALIGN(32);
+    ioctlv vectors[2];
+    int out = !(bmRequestType & USB_ENDPOINT_IN);
+
+    build_v5_ctrl_transfer(&transfer, device->dev_id, bmRequestType, bmRequest, wValue, wIndex);
+
+    vectors[0].data = &transfer;
+    vectors[0].len = sizeof(transfer);
+    vectors[1].data = rpData;
+    vectors[1].len = wLength;
+
+    return IOS_Ioctlv(dev_usb_hid_fd, DEV_USB_HID5_IOCTL_CONTROL, 1 - out, 1 + out, vectors);
+}
+
+static inline int usb_hid_v5_intr_transfer(usb_input_device_t *device, int out, uint16_t wLength, void *rpData) {
+    struct usb_hid_v5_transfer transfer ATTRIBUTE_ALIGN(32);
+    ioctlv vectors[2];
+
+    build_v5_intr_transfer(&transfer, device->dev_id, out);
+
+    vectors[0].data = &transfer;
+    vectors[0].len = sizeof(transfer);
+    vectors[1].data = rpData;
+    vectors[1].len = wLength;
+
+    return IOS_Ioctlv(dev_usb_hid_fd, DEV_USB_HID5_IOCTL_INTERRUPT, 1 - out, 1 + out, vectors);
+}
+
+static inline int usb_hid_v5_intr_transfer_async(usb_input_device_t *device, bool out, void *rpData, uint16_t length) {
+    struct usb_hid_v5_transfer transfer ATTRIBUTE_ALIGN(32);
+    ioctlv vectors[2];
+
+    build_v5_intr_transfer(&transfer, device->dev_id, out ? device->endpoint_address_out : device->endpoint_address_in);
+
+    vectors[0].data = &transfer;
+    vectors[0].len = sizeof(transfer);
+    vectors[1].data = rpData;
+    vectors[1].len = length;
+
+    return IOS_IoctlvAsync(dev_usb_hid_fd, DEV_USB_HID5_IOCTL_INTERRUPT, 1 - out, 1 + out, vectors,
+                           onDevUsbPoll, device);
+}
+
+static inline void build_v4_ctrl_transfer(struct usb_hid_v4_transfer *transfer, int dev_id,
+                                          uint8_t bmRequestType, uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, void *rpData) {
+    memset(transfer, 0, sizeof(*transfer));
+    transfer->dev_id = dev_id;
+    transfer->ctrl.bmRequestType = bmRequestType;
+    transfer->ctrl.bmRequest = bmRequest;
+    transfer->ctrl.wValue = wValue;
+    transfer->ctrl.wIndex = wIndex;
+    transfer->ctrl.wLength = wLength;
+    transfer->data = rpData;
+}
+
+static inline void build_v4_intr_transfer(struct usb_hid_v4_transfer *transfer, int dev_id, int out, int dLength, void *rpData) {
+    memset(transfer, 0, sizeof(*transfer));
+    transfer->dev_id = dev_id;
+    transfer->intr.out = out;
+    transfer->intr.dLength = dLength;
+    transfer->data = rpData;
+}
+
+static inline int usb_hid_v4_ctrl_transfer_async(usb_input_device_t *device, uint8_t bmRequestType,
+                                                 uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength,
+                                                 void *rpData) {
+    struct usb_hid_v4_transfer transfer ATTRIBUTE_ALIGN(32);
+
+    build_v4_ctrl_transfer(&transfer, device->dev_id, bmRequestType, bmRequest, wValue, wIndex, wLength, rpData);
+
+    return IOS_IoctlAsync(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_CONTROL, &transfer, sizeof(transfer), NULL, 0,
+                          onDevUsbPoll, device);
+}
+
+static inline int usb_hid_v4_intr_transfer_async(usb_input_device_t *device, bool out, void *rpData, uint16_t length) {
+    struct usb_hid_v4_transfer transfer ATTRIBUTE_ALIGN(32);
+
+    if (out) {
+        build_v4_intr_transfer(&transfer, device->dev_id, device->endpoint_address_out, length, rpData);
+        return IOS_IoctlAsync(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_OUT, &transfer, sizeof(transfer), NULL, 0,
+                              onDevUsbPoll, device);
+    }
+
+    build_v4_intr_transfer(&transfer, device->dev_id, device->endpoint_address_in, length, rpData);
+    return IOS_IoctlAsync(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_IN, &transfer, sizeof(transfer), NULL, 0,
+                          onDevUsbPoll, device);
+}
+
+static inline int usb_hid_v4_intr_transfer(usb_input_device_t *device, bool out, void *rpData, uint16_t length) {
+    struct usb_hid_v4_transfer transfer ATTRIBUTE_ALIGN(32);
+
+    if (out) {
+        build_v4_intr_transfer(&transfer, device->dev_id, device->endpoint_address_out, length, rpData);
+        return IOS_Ioctl(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_OUT, &transfer, sizeof(transfer), NULL, 0);
+    }
+
+    build_v4_intr_transfer(&transfer, device->dev_id, device->endpoint_address_in, length, rpData);
+    return IOS_Ioctl(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_IN, &transfer, sizeof(transfer), NULL, 0);
+}
+
+static inline int usb_hid_v4_ctrl_transfer(usb_input_device_t *device, uint8_t bmRequestType, uint8_t bmRequest,
+                                           uint16_t wValue, uint16_t wIndex, uint16_t wLength, void *rpData) {
+    struct usb_hid_v4_transfer transfer ATTRIBUTE_ALIGN(32);
+
+    build_v4_ctrl_transfer(&transfer, device->dev_id, bmRequestType, bmRequest, wValue, wIndex, wLength, rpData);
+    return IOS_Ioctl(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_CONTROL, &transfer, sizeof(transfer), NULL, 0);
+}
+
 static int checkVersion5(ios_cb_t cb, usr_t data) {
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_VERSION,
-    NULL, 0,
-    dev_usb_hid5_buffer, 0x20,
-    cb, data
-  );
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_VERSION,
+        NULL, 0,
+        dev_usb_hid5_buffer, 0x20,
+        cb, data);
 }
 static int getDeviceChange5(ios_cb_t cb, usr_t data) {
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_DEVICE_CHANGE,
-    NULL, 0,
-    dev_usb_hid5_devices, sizeof(dev_usb_hid5_devices[0]) * DEV_USB_HID5_DEVICE_CHANGE_SIZE,
-    cb, data
-  );
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_DEVICE_CHANGE,
+        NULL, 0,
+        dev_usb_hid5_devices, sizeof(dev_usb_hid5_devices[0]) * DEV_USB_HID5_DEVICE_CHANGE_SIZE,
+        cb, data);
 }
 
 static int sendAttach5(ios_cb_t cb, usr_t data) {
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_ATTACH_FINISH,
-    NULL, 0,
-    NULL, 0,
-    cb, data
-  );
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID5_IOCTL_ATTACH_FINISH,
+        NULL, 0,
+        NULL, 0,
+        cb, data);
 }
 
 static int sendResume5(ios_cb_t cb, usr_t data) {
-  dev_usb_hid5_buffer[0] = gcn_adapter_id;
-  dev_usb_hid5_buffer[1] = 0;
-  dev_usb_hid5_buffer[2] = 1;
-  dev_usb_hid5_buffer[3] = 0;
-  dev_usb_hid5_buffer[4] = 0;
-  dev_usb_hid5_buffer[5] = 0;
-  dev_usb_hid5_buffer[6] = 0;
-  dev_usb_hid5_buffer[7] = 0;
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_SET_RESUME,
-    dev_usb_hid5_buffer, 0x20,
-    NULL, 0,
-    cb, data
-  );
+    usb_input_device_t *device = (usb_input_device_t *)data;
+    dev_usb_hid5_buffer[0] = device->dev_id;
+    dev_usb_hid5_buffer[1] = 0;
+    dev_usb_hid5_buffer[2] = 1;
+    dev_usb_hid5_buffer[3] = 0;
+    dev_usb_hid5_buffer[4] = 0;
+    dev_usb_hid5_buffer[5] = 0;
+    dev_usb_hid5_buffer[6] = 0;
+    dev_usb_hid5_buffer[7] = 0;
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID5_IOCTL_SET_RESUME,
+        dev_usb_hid5_buffer, 0x20,
+        NULL, 0,
+        cb, data);
 }
 
 static int sendParams5(ios_cb_t cb, usr_t data) {
-  /* Assumes buffer still in state from sendResume5 */
-  return IOS_IoctlAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_DEVICE_PARAMETERS,
-    dev_usb_hid5_buffer, 0x20,
-    dev_usb_hid5_buffer + 8, 0x60,
-    cb, data
-  );
+    /* Assumes buffer still in state from sendResume5 */
+    return IOS_IoctlAsync(
+        dev_usb_hid_fd, DEV_USB_HID5_IOCTL_GET_DEVICE_PARAMETERS,
+        dev_usb_hid5_buffer, 0x20,
+        dev_usb_hid5_buffer + 8, 0x60,
+        cb, data);
 }
-
-static int sendInit5(ios_cb_t cb, usr_t data) {
-  /* Assumes buffer already set up */
-  dev_usb_hid5_argv[0] = (ioctlv){dev_usb_hid5_buffer, 0x40};
-  dev_usb_hid5_argv[1] = (ioctlv){init_msg_buffer, sizeof(init_msg_buffer)};
-  return IOS_IoctlvAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_INTERRUPT,
-    2, 0, dev_usb_hid5_argv,
-    cb, data
-  );
-}
-
-static int sendPoll5(ios_cb_t cb, usr_t data) {
-  /* Assumes buffer already set up */
-  dev_usb_hid5_poll_argv[0] = (ioctlv){dev_usb_hid5_buffer+0x10, 0x40};
-  dev_usb_hid5_poll_argv[1] = (ioctlv){poll_msg_buffer, WUP_028_POLL_SIZE};
-  return IOS_IoctlvAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_INTERRUPT,
-    1, 1, dev_usb_hid5_poll_argv,
-    cb, data
-  );
-}
-
-static int sendRumble5(ios_cb_t cb, usr_t data) {
-  /* Assumes buffer already set up */
-  dev_usb_hid5_argv[0] = (ioctlv){dev_usb_hid5_buffer, 0x40};
-  dev_usb_hid5_argv[1] = (ioctlv){rumble_msg_buffer, sizeof(rumble_msg_buffer)};
-  return IOS_IoctlvAsync(
-    dev_usb_hid_fd, DEV_USB_HID5_IOCTL_INTERRUPT,
-    2, 0, dev_usb_hid5_argv,
-    cb, data
-  );
-}
-
 #endif
 
 static void onError(void) {
-  dev_usb_hid_fd = -1;
-  IOS_CloseAsync(dev_usb_hid_fd, callbackIgnore, NULL);
+    dev_usb_hid_fd = -1;
+    IOS_CloseAsync(dev_usb_hid_fd, callbackIgnore, NULL);
 }
 
 /*============================================================================*/
@@ -485,297 +628,428 @@ static void onError(void) {
 /*============================================================================*/
 
 static void onDevOpen(ios_fd_t fd, usr_t unused) {
-  int ret;
-  (void)unused;
-  dev_usb_hid_fd = fd;
-  if (fd >= 0)
-    ret =
+    int ret;
+    (void)unused;
+    printf("    hid dev opened %d\r\n", fd);
+    dev_usb_hid_fd = fd;
+    if (fd >= 0)
+        ret =
 #if defined(SUPPORT_DEV_USB_HID4)
-      checkVersion4(onDevGetVersion4, NULL);
+            checkVersion4(onDevGetVersion4, NULL);
 #elif defined(SUPPORT_DEV_USB_HID5)
-      checkVersion5(onDevGetVersion5, NULL);
+            checkVersion5(onDevGetVersion5, NULL);
 #else
-      -1;
+            -1;
 #endif
-  else
-    ret = fd;
-  if (ret) {
-    error = ret;
-    errorMethod = 1;
-  }
+    else
+        ret = fd;
+    if (ret) {
+        printf("    ... error %d\r\n", fd);
+        error = ret;
+        errorMethod = 1;
+    }
 }
 
 static void callbackIgnore(ios_ret_t ret, usr_t unused) {
-  (void)unused;
-  (void)ret;
+    (void)unused;
+    (void)ret;
 }
 
 #ifdef SUPPORT_DEV_USB_HID4
 static void onDevGetVersion4(ios_ret_t ret, usr_t unused) {
-  (void)unused;
-  if (ret == DEV_USB_HID4_VERSION) {
+    (void)unused;
+    printf("    onDevGetVersion4 %d\r\n", ret);
+    if (ret == DEV_USB_HID4_VERSION) {
 #ifdef HAVE_VERSION
-    version = 4;
+        version = 4;
+        printf("    Found hidv4\r\n");
 #endif
-    ret = getDeviceChange4(onDevUsbChange4, NULL);
-  } else
-    ret =
+        ret = getDeviceChange4(onDevUsbChange4, NULL);
+    } else {
 #ifdef SUPPORT_DEV_USB_HID5
-      checkVersion5(onDevGetVersion5, NULL);
-#else
-      ret;
+        ret = checkVersion5(onDevGetVersion5, NULL);
 #endif
-  if (ret) {
-    error = ret;
-    errorMethod = 2;
-    onError();
-  }
+    }
+    if (ret) {
+        error = ret;
+        errorMethod = 2;
+        onError();
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
 static void onDevGetVersion5(ios_ret_t ret, usr_t unused) {
-  (void)unused;
-  if (ret == 0 && dev_usb_hid5_buffer[0] == DEV_USB_HID5_VERSION) {
+    (void)unused;
+    if (ret == 0 && dev_usb_hid5_buffer[0] == DEV_USB_HID5_VERSION) {
 #ifdef HAVE_VERSION
-    version = 5;
+        version = 5;
+        printf("    Found hidv5\r\n");
 #endif
-    ret = getDeviceChange5(onDevUsbChange5, NULL);
-  } else if (ret == 0)
-    ret = dev_usb_hid5_buffer[0];
-
-  if (ret) {
-    error = ret;
-    errorMethod = 3;
-    onError();
-  }
+        ret = getDeviceChange5(onDevUsbChange5, NULL);
+    } else if (ret == 0) {
+        ret = dev_usb_hid5_buffer[0];
+    }
+    if (ret) {
+        error = ret;
+        errorMethod = 3;
+        onError();
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID4
 static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
-  if (ret >= 0) {
-    int found = 0;
-    for (int i = 0; i < DEV_USB_HID4_DEVICE_CHANGE_SIZE && dev_usb_hid4_devices[i] < sizeof(dev_usb_hid4_devices); i += dev_usb_hid4_devices[i] / 4) {
-      uint32_t device_id = dev_usb_hid4_devices[i + 1];
-      if (
-        dev_usb_hid4_devices[i] == WUP_028_DESCRIPTOR_SIZE
-        && dev_usb_hid4_devices[i + 4] == WUP_028_ID
-      ) {
-        found = 1;
-        if (gcn_adapter_id != device_id) {
-          gcn_adapter_id = device_id;
-          sendInit4(onDevUsbInit, NULL);
+    if (ret >= 0) {
+        int found = 0;
+        usb_input_device_t *device;
+        const usb_device_driver_t *driver;
+        uint16_t packet_size_in = 128;
+        uint16_t packet_size_out = 128;
+        uint8_t endpoint_address_in = 0;
+        uint8_t endpoint_address_out = 0;
+        uint32_t vid_pid;
+        uint16_t vid, pid;
+        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+            device = &fake_devices[i];
+            if (!device->valid)
+                continue;
+
+            found = false;
+            for (int i = 0; i < DEV_USB_HID4_DEVICE_CHANGE_SIZE && dev_usb_hid4_devices[i] < sizeof(dev_usb_hid4_devices); i += dev_usb_hid4_devices[i] / 4) {
+                uint32_t device_id = dev_usb_hid4_devices[i + 1];
+                if (device->dev_id == device_id) {
+                    found = true;
+                    break;
+                }
+            }
+
+            /* Oops, it got disconnected */
+            if (!found) {
+                if (device->driver->disconnect)
+                    device->driver->disconnect(device);
+
+                if (device->connectCallback) {
+                    device->connectCallback(device->wiimote, WPAD_STATUS_DISCONNECTED);
+                }
+                /* Set this device as not valid */
+                device->valid = false;
+            }
         }
-        break;
-      }
+
+        found = false;
+        for (int i = 0; i < DEV_USB_HID4_DEVICE_CHANGE_SIZE && dev_usb_hid4_devices[i] < sizeof(dev_usb_hid4_devices); i += dev_usb_hid4_devices[i] / 4) {
+            uint32_t device_id = dev_usb_hid4_devices[i + 1];
+            vid_pid = dev_usb_hid4_devices[i + 4];
+            vid = (vid_pid >> 16) & 0xFFFF;
+            pid = vid_pid & 0xFFFF;
+            printf("       Found device v4 %04x!\r\n", vid_pid);
+            driver = NULL;
+            for (int i = 0; i < ARRAY_SIZE(usb_device_drivers); i++) {
+                if (usb_device_drivers[i]->probe(vid, pid))
+                    driver = usb_device_drivers[i];
+                break;
+            }
+            if (driver != NULL) {
+                for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                    device = &fake_devices[i];
+                    if (device->dev_id == device_id) {
+                        break;
+                    }
+                    if (device->valid || device->real)
+                        continue;
+                    break;
+                }
+                if (!device->valid && !device->real) {
+                    endpoint_address_in = 0;
+                    endpoint_address_out = 0;
+                    uint32_t total_len = dev_usb_hid4_devices[i] / 4;
+                    int j = 2;
+                    bool is_hid = false;
+                    while (j < total_len) {
+                        uint8_t len = (dev_usb_hid4_devices[i + j] >> 24) & 0xFF;
+                        uint8_t type = (dev_usb_hid4_devices[i + j] >> 16) & 0xFF;
+                        printf("Found desc: %02x %02x\r\n", type, len);
+                        if (type == USB_DESCRIPTOR_ENDPOINT && is_hid) {
+                            uint8_t addr = (dev_usb_hid4_devices[i + j] >> 8) & 0xFF;
+                            int in = (addr & USB_ENDPOINT_IN);
+                            if (in) {
+                                packet_size_in = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFFFF;
+                                endpoint_address_in = addr;
+                                printf("          Found in endpoint %02x, size %04d\r\n", endpoint_address_in, packet_size_in);
+                            } else {
+                                packet_size_out = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFFFF;
+                                endpoint_address_out = addr;
+                                printf("          Found out endpoint %02x, size %04d\r\n", endpoint_address_out, packet_size_out);
+                            }
+                            if (endpoint_address_in && endpoint_address_out) {
+                                break;
+                            }
+                        }
+                        if (type == USB_DESCRIPTOR_INTERFACE) {
+                            uint8_t class = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFF;
+                            uint8_t subclass = (dev_usb_hid4_devices[i + j + 1] >> 8) & 0xFF;
+                            uint8_t protocol = (dev_usb_hid4_devices[i + j + 1]) & 0xFF;
+                            printf("          Class: %02x, Subclass: %02x, Protocol: %02x\r\n", class, subclass, protocol);
+                            is_hid = class == HID_INTF;
+                        }
+                        j += (len / 4) + 1;
+                    }
+
+                    device->endpoint_address_in = endpoint_address_in;
+                    device->endpoint_address_out = endpoint_address_out;
+                    device->max_packet_len_in = packet_size_in;
+                    device->max_packet_len_out = packet_size_out;
+                    found = 1;
+                    printf("          Found!\r\n");
+                    device->dev_id = device_id;
+                    device->valid = true;
+                    if (device->connectCallback != NULL) {
+                        printf("          Connect callback call!\r\n");
+                        device->connectCallback(device->wiimote, WPAD_STATUS_OK);
+                    }
+                    device->driver = driver;
+                    device->driver->init(device);
+                }
+                break;
+            }
+        }
+        ret = getDeviceChange4(onDevUsbChange4, NULL);
     }
-    if (!found) gcn_adapter_id = (uint32_t)-1;
-    ret = getDeviceChange4(onDevUsbChange4, NULL);
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 5;
-    onError();
-  }
+    if (ret) {
+        error = ret;
+        errorMethod = 5;
+        onError();
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
 static void onDevUsbChange5(ios_ret_t ret, usr_t unused) {
-  if (ret >= 0) {
-    ret = sendAttach5(onDevUsbAttach5, (usr_t)ret);
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 4;
-    onError();
-  }
+    if (ret >= 0) {
+        ret = sendAttach5(onDevUsbAttach5, (usr_t)ret);
+    }
+    if (ret) {
+        error = ret;
+        errorMethod = 4;
+        onError();
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
 static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount) {
-  if (ret == 0) {
-    int found = 0;
-    int count = (int)vcount;
-    for (int i = 0; i < DEV_USB_HID5_DEVICE_CHANGE_SIZE && i < count; i++) {
-      uint32_t device_id = dev_usb_hid5_devices[i].id;
-      if (dev_usb_hid5_devices[i].vid_pid == WUP_028_ID) {
-        found = 1;
-        if (gcn_adapter_id != device_id) {
-          gcn_adapter_id = device_id;
+    if (ret == 0) {
+        uint32_t vid_pid;
+        uint16_t vid, pid;
+        int found = 0;
+        usb_input_device_t *device;
+        const usb_device_driver_t *driver;
+        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+            device = &fake_devices[i];
+            if (!device->valid)
+                continue;
 
-          if (sendResume5(onDevUsbResume5, NULL))
-            found = 0;
+            found = false;
+            for (int i = 0; i < DEV_USB_HID5_DEVICE_CHANGE_SIZE && i < (ios_ret_t)vcount; i++) {
+                uint32_t device_id = dev_usb_hid5_devices[i].id;
+                if (device->dev_id == device_id) {
+                    found = true;
+                    break;
+                }
+            }
+
+            /* Oops, it got disconnected */
+            if (!found) {
+                if (device->driver->disconnect)
+                    device->driver->disconnect(device);
+
+                /* Tell the fake Wiimote manager we got an input device removal */
+                if (device->connectCallback) {
+                    device->connectCallback(device->wiimote, WPAD_STATUS_DISCONNECTED);
+                }
+                /* Set this device as not valid */
+                device->valid = false;
+            }
         }
-        break;
-      }
+        for (int i = 0; i < DEV_USB_HID5_DEVICE_CHANGE_SIZE && i < (ios_ret_t)vcount; i++) {
+            uint32_t device_id = dev_usb_hid5_devices[i].id;
+            vid_pid = dev_usb_hid5_devices[i].vid_pid;
+            vid = (vid_pid >> 16) & 0xFFFF;
+            pid = vid_pid & 0xFFFF;
+            printf("       Found device v5 %04x!\r\n", vid_pid);
+            driver = NULL;
+            for (int i = 0; i < ARRAY_SIZE(usb_device_drivers); i++) {
+                if (usb_device_drivers[i]->probe(vid, pid))
+                    driver = usb_device_drivers[i];
+                break;
+            }
+            if (driver != NULL) {
+                for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                    device = &fake_devices[i];
+                    if (device->dev_id == device_id) {
+                        break;
+                    }
+                    if (device->valid || device->real)
+                        continue;
+                    break;
+                }
+                if (!device->valid && !device->real) {
+                    found = 1;
+                    printf("          Found!\r\n");
+                    device->dev_id = device_id;
+                    device->valid = true;
+                    if (device->connectCallback != NULL) {
+                        printf("          Connect callback call!\r\n");
+                        device->connectCallback(device->wiimote, WPAD_STATUS_OK);
+                    }
+                    ret = sendResume5(onDevUsbResume5, device);
+                }
+                break;
+            }
+        }
+        ret = getDeviceChange5(onDevUsbChange5, NULL);
     }
-    if (!found) gcn_adapter_id = (uint32_t)-1;
-    ret = getDeviceChange5(onDevUsbChange5, NULL);
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 5;
-    onError();
-  }
+    if (ret) {
+        error = ret;
+        errorMethod = 5;
+        onError();
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
-static void onDevUsbResume5(ios_ret_t ret, usr_t unused) {
-  if (ret == 0) {
-    ret = sendParams5(onDevUsbParams5, NULL);
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 6;
-    gcn_adapter_id = -1;
-  }
+static void onDevUsbResume5(ios_ret_t ret, usr_t device) {
+    if (ret == 0) {
+        ret = sendParams5(onDevUsbParams5, device);
+    }
+    if (ret) {
+        error = ret;
+        errorMethod = 6;
+    }
 }
 #endif
 
 #ifdef SUPPORT_DEV_USB_HID5
-static void onDevUsbParams5(ios_ret_t ret, usr_t unused) {
-  if (ret == 0) {
-    /* 0-7 are already correct :) */
-    dev_usb_hid5_buffer[8] = 0;
-    dev_usb_hid5_buffer[9] = 0;
-    dev_usb_hid5_buffer[10] = 0;
-    dev_usb_hid5_buffer[11] = 0;
-    dev_usb_hid5_buffer[12] = 0;
-    dev_usb_hid5_buffer[13] = 0;
-    dev_usb_hid5_buffer[14] = 0;
-    dev_usb_hid5_buffer[15] = 0;
-    dev_usb_hid5_buffer[16] = gcn_adapter_id;
-    dev_usb_hid5_buffer[17] = 0;
-    dev_usb_hid5_buffer[18] = 0;
-    dev_usb_hid5_buffer[19] = 0;
-    dev_usb_hid5_buffer[20] = 0;
-    dev_usb_hid5_buffer[21] = 0;
-    dev_usb_hid5_buffer[22] = 0;
-    dev_usb_hid5_buffer[23] = 0;
-    dev_usb_hid5_buffer[24] = 0;
-    dev_usb_hid5_buffer[25] = 0;
-    dev_usb_hid5_buffer[26] = 0;
-    dev_usb_hid5_buffer[27] = 0;
-    dev_usb_hid5_buffer[28] = 0;
-    dev_usb_hid5_buffer[29] = 0;
-    dev_usb_hid5_buffer[30] = 0;
-    dev_usb_hid5_buffer[31] = 0;
-    ret = sendInit5(onDevUsbInit, NULL);
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 7;
-    gcn_adapter_id = -1;
-  }
+static void onDevUsbParams5(ios_ret_t ret, usr_t user) {
+    usb_input_device_t *device = (usb_input_device_t *)user;
+    if (ret == 0) {
+        /* 0-7 are already correct :) */
+        dev_usb_hid5_buffer[8] = 0;
+        dev_usb_hid5_buffer[9] = 0;
+        dev_usb_hid5_buffer[10] = 0;
+        dev_usb_hid5_buffer[11] = 0;
+        dev_usb_hid5_buffer[12] = 0;
+        dev_usb_hid5_buffer[13] = 0;
+        dev_usb_hid5_buffer[14] = 0;
+        dev_usb_hid5_buffer[15] = 0;
+        dev_usb_hid5_buffer[16] = device->dev_id;
+        dev_usb_hid5_buffer[17] = 0;
+        dev_usb_hid5_buffer[18] = 0;
+        dev_usb_hid5_buffer[19] = 0;
+        dev_usb_hid5_buffer[20] = 0;
+        dev_usb_hid5_buffer[21] = 0;
+        dev_usb_hid5_buffer[22] = 0;
+        dev_usb_hid5_buffer[23] = 0;
+        dev_usb_hid5_buffer[24] = 0;
+        dev_usb_hid5_buffer[25] = 0;
+        dev_usb_hid5_buffer[26] = 0;
+        dev_usb_hid5_buffer[27] = 0;
+        dev_usb_hid5_buffer[28] = 0;
+        dev_usb_hid5_buffer[29] = 0;
+        dev_usb_hid5_buffer[30] = 0;
+        dev_usb_hid5_buffer[31] = 0;
+        device->driver->init(device);
+    }
+    if (ret) {
+        error = ret;
+        errorMethod = 7;
+    }
 }
 #endif
 
-static void onRumble(ios_ret_t ret, usr_t token) {
-  (void)ret;
-  uint32_t isr = cpu_isr_disable();
-  if ((usr_t)(uint32_t)rumble_token == token)
-    rumble_delay = 0;
-  cpu_isr_restore(isr);
-}
-
-static int sendPoll(void) {
-  if (rumble_sent != rumble_recv) {
-    uint32_t isr = cpu_isr_disable();
-    if (rumble_delay == 0) {
-      for (int i = 0; i < GCN_CONTROLLER_COUNT; i++)
-        rumble_msg_buffer[i + 1] = rumble_buffer[rumble_recv][i];
-      rumble_recv = (rumble_recv + 1) % RUMBLE_BUFFER;
-      rumble_delay = RUMBLE_DELAY;
-      rumble_token++;
-    } else
-      rumble_delay--;
-    cpu_isr_restore(isr);
-
+int usb_device_driver_issue_ctrl_transfer(usb_input_device_t *device, uint8_t requesttype,
+                                          uint8_t request, uint16_t value, uint16_t index, void *data, uint16_t length) {
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
     if (version == 5)
 #endif
-    sendRumble5(onRumble, (usr_t)(uint32_t)rumble_token);
+        return usb_hid_v5_ctrl_transfer(device, requesttype, request, value, index, length, data);
 #endif
 #ifdef SUPPORT_DEV_USB_HID4
 #ifdef HAVE_VERSION
     if (version == 4)
 #endif
-    sendRumble4(onRumble, (usr_t)(uint32_t)rumble_token);
+        return usb_hid_v4_ctrl_transfer(device, requesttype, request, value, index, length, data);
 #endif
-  }
+    return -1;
+}
+int usb_device_driver_issue_intr_transfer(usb_input_device_t *device, bool out, void *data, uint16_t length) {
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
-  if (version == 5)
+    if (version == 5)
 #endif
-  return sendPoll5(onDevUsbPoll, NULL);
+        return usb_hid_v5_intr_transfer(device, out, length, data);
 #endif
 #ifdef SUPPORT_DEV_USB_HID4
 #ifdef HAVE_VERSION
-  if (version == 4)
+    if (version == 4)
 #endif
-  return sendPoll4(onDevUsbPoll, NULL);
+        return usb_hid_v4_intr_transfer(device, out, data, length);
 #endif
-  return -1;
+    return -1;
 }
 
-static void onDevUsbInit(ios_ret_t ret, usr_t unused) {
-  if (ret >= 0) {
-    ret = sendPoll();
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 8;
-    gcn_adapter_id = -1;
-  }
+int usb_device_driver_issue_ctrl_transfer_async(usb_input_device_t *device, uint8_t requesttype,
+                                                uint8_t request, uint16_t value, uint16_t index, void *data, uint16_t length) {
+#ifdef SUPPORT_DEV_USB_HID5
+#ifdef HAVE_VERSION
+    if (version == 5)
+#endif
+        return usb_hid_v5_ctrl_transfer_async(device, requesttype, request, value, index, length, data);
+#endif
+#ifdef SUPPORT_DEV_USB_HID4
+#ifdef HAVE_VERSION
+    if (version == 4)
+#endif
+        return usb_hid_v4_ctrl_transfer_async(device, requesttype, request, value, index, length, data);
+#endif
+    return -1;
+}
+int usb_device_driver_issue_intr_transfer_async(usb_input_device_t *device, bool out, void *data, uint16_t length) {
+#ifdef SUPPORT_DEV_USB_HID5
+#ifdef HAVE_VERSION
+    if (version == 5)
+#endif
+        return usb_hid_v5_intr_transfer_async(device, out, data, length);
+#endif
+#ifdef SUPPORT_DEV_USB_HID4
+#ifdef HAVE_VERSION
+    if (version == 4)
+#endif
+        return usb_hid_v4_intr_transfer_async(device, out, data, length);
+#endif
+    return -1;
 }
 
-static void onDevUsbPoll(ios_ret_t ret, usr_t unused) {
-  if (ret >= 0) {
-    if (poll_msg_buffer[0] == 0x21) {
-      uint32_t isr = cpu_isr_disable();
-      for (int i = 0; i < GCN_CONTROLLER_COUNT; i++) {
-        uint8_t *data = poll_msg_buffer + (i * 9 + 1);
-        if ((data[0] >> 4) != 1 && (data[0] >> 4) != 2) {
-          gcn_data[i].error = PADData_ERROR_NO_CONNECTION;
-          continue;
+static void onDevUsbPoll(ios_ret_t ret, usr_t user) {
+    usb_input_device_t *device = (usb_input_device_t *)user;
+    if (ret >= 0) {
+
+        device->driver->usb_async_resp(device);
+        if (device->autoSamplingBuffer) {
+            int autoSampleIndex = device->autoSamplingBufferIndex;
+            int autoSampleNext = (autoSampleIndex + 1) % device->autoSamplingBufferCount;
+            WPADData_t *nextPos = (WPADData_t *)((char *)device->autoSamplingBuffer + autoSampleNext * WPADDataFormatSize(device->currentFormat));
+            MyWPADRead(device->wiimote, nextPos);
+            device->autoSamplingBufferIndex = autoSampleNext;
         }
-        gcn_data[i].buttons =
-          ((data[1] >> 0) & 1 ? PADData_BUTTON_A : 0) |
-          ((data[1] >> 1) & 1 ? PADData_BUTTON_B : 0) |
-          ((data[1] >> 2) & 1 ? PADData_BUTTON_X : 0) |
-          ((data[1] >> 3) & 1 ? PADData_BUTTON_Y : 0) |
-          ((data[1] >> 4) & 1 ? PADData_BUTTON_DL : 0) |
-          ((data[1] >> 5) & 1 ? PADData_BUTTON_DR : 0) |
-          ((data[1] >> 6) & 1 ? PADData_BUTTON_DD : 0) |
-          ((data[1] >> 7) & 1 ? PADData_BUTTON_DU : 0) |
-          ((data[2] >> 0) & 1 ? PADData_BUTTON_S : 0) |
-          ((data[2] >> 1) & 1 ? PADData_BUTTON_Z : 0) |
-          (data[7] >= GCN_TRIGGER_THRESHOLD ? PADData_BUTTON_L : 0) |
-          (data[8] >= GCN_TRIGGER_THRESHOLD ? PADData_BUTTON_R : 0);
-        gcn_data[i].aStickX = data[3] - 128;
-        gcn_data[i].aStickY = data[4] - 128;
-        gcn_data[i].cStickX = data[5] - 128;
-        gcn_data[i].cStickY = data[6] - 128;
-        gcn_data[i].sliderL = data[7];
-        gcn_data[i].sliderR = data[8];
-        gcn_data[i]._unknown8 = 0;
-        gcn_data[i]._unknown9 = 0;
-        gcn_data[i].error = 0;
-      }
-      gcn_data_written = mftb();
-      cpu_isr_restore(isr);
+        if (device->samplingCallback != 0) {
+            device->samplingCallback(device->wiimote);
+        }
     }
-    ret = sendPoll();
-  }
-  if (ret) {
-    error = ret;
-    errorMethod = 9;
-    gcn_adapter_id = -1;
-  }
+    if (ret) {
+        error = ret;
+        errorMethod = 9;
+    }
 }
-
