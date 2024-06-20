@@ -103,7 +103,7 @@ struct WPADData_t {
             int16_t stick[2];
             int16_t unused;
             int16_t which;
-            uint8_t unused2;
+            uint8_t velocity;
             uint8_t whammy;
         } drum;
         struct {

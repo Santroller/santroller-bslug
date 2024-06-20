@@ -110,7 +110,8 @@ static bool initCalled = false;
 static const usb_device_driver_t *usb_device_drivers[] = {
     &gh_guitar_usb_device_driver,
     &gh_drum_usb_device_driver,
-    &turntable_usb_device_driver};
+    &turntable_usb_device_driver,
+	&santroller_usb_device_driver};
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 /*============================================================================*/
 /* Top level interface to game */
@@ -219,6 +220,7 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
         WPADGetAccGravityUnit(wiimote, extension, result);
         return;
     }
+    printf("accel unit\r\n");
     uint32_t isr = cpu_isr_disable();
     if (extension == WPAD_EXTENSION_NONE) {
         *result = fake_devices[wiimote].gravityUnit[0];
@@ -738,9 +740,10 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
             printf("       Found device v4 %04x!\r\n", vid_pid);
             driver = NULL;
             for (int i = 0; i < ARRAY_SIZE(usb_device_drivers); i++) {
-                if (usb_device_drivers[i]->probe(vid, pid))
+                if (usb_device_drivers[i]->probe(vid, pid)) {
                     driver = usb_device_drivers[i];
-                break;
+                    break;
+                }
             }
             if (driver != NULL) {
                 for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {

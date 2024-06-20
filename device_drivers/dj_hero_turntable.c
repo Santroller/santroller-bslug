@@ -227,7 +227,7 @@ bool turntable_report_input(usb_input_device_t *device)
 
 	bm_map_wiimote(TURNTABLE_BUTTON__NUM, priv->input.buttons,
 				   turntable_mapping.wiimote_button_map,
-				   &wiimote_buttons);
+				   &device->wpadData.buttons);
 
 	bm_map_turntable(TURNTABLE_BUTTON__NUM, priv->input.buttons,
 				  TURNTABLE_ANALOG_AXIS__NUM, priv->input.analog_axis,

@@ -198,22 +198,14 @@ int gh_drum_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot)
 bool gh_drum_report_input(usb_input_device_t *device)
 {
 	struct gh_drum_private_data_t *priv = (void *)device->private_data;
-	uint16_t wiimote_buttons = 0;
-	uint16_t acc_x, acc_y, acc_z;
 	union wiimote_extension_data_t extension_data;
 
 	bm_map_wiimote(DRUM_BUTTON__NUM, priv->input.buttons,
 				   drum_mapping.wiimote_button_map,
-				   &wiimote_buttons);
-
-	/* Normalize to accelerometer calibration configuration */
-	acc_x = ACCEL_ZERO_G;
-	acc_y = ACCEL_ZERO_G;
-	acc_z = ACCEL_ZERO_G;
-
-	fake_wiimote_report_accelerometer(device->wiimote, acc_x, acc_y, acc_z);
+				   &device->wpadData.buttons);
 
 	uint8_t drum_analog_axis[BM_DRUM_ANALOG_AXIS__NUM] = {0};
+	// TODO: this
 	drum_analog_axis[BM_DRUM_ANALOG_AXIS_STICK_X - 1] = 128;
 	drum_analog_axis[BM_DRUM_ANALOG_AXIS_STICK_Y - 1] = 128;
 	// Manually handle velocity here, as its pretty different between the wii and ps3 formats
@@ -241,8 +233,7 @@ bool gh_drum_report_input(usb_input_device_t *device)
 				BM_GUITAR_ANALOG_AXIS__NUM, drum_analog_axis,
 				drum_mapping.drum_button_map,
 				&extension_data.drum);
-	fake_wiimote_report_input_ext(device->wiimote, wiimote_buttons,
-								  &extension_data, sizeof(extension_data.drum));
+	device->wpadData.extension_data.drum.buttons = extension_data.drum.bt.hex;
 
 	return true;
 }

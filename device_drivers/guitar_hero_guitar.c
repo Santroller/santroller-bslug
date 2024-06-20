@@ -168,6 +168,9 @@ int gh_guitar_driver_ops_init(usb_input_device_t *device)
 	device->extension = WPAD_EXTENSION_GUITAR;
 	device->wpadData.extension = WPAD_EXTENSION_GUITAR;
 	device->format = WPAD_FORMAT_GUITAR;
+	device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
+	device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
+	device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
 	ret = gh_guitar_request_data(device);
 	if (ret < 0)
 		return ret;
@@ -206,10 +209,9 @@ bool gh_guitar_report_input(usb_input_device_t *device)
 	bm_map_wiimote(GUITAR_BUTTON__NUM, priv->input.buttons,
 				   guitar_mapping.wiimote_button_map,
 				   &device->wpadData.buttons);
-	/* Normalize to accelerometer calibration configuration */
-	device->wpadData.acceleration[0] = ACCEL_ZERO_G - ((int32_t)priv->input.acc_x * (ACCEL_ONE_G - ACCEL_ZERO_G)) / GUITAR_ACC_RES_PER_G;
-	device->wpadData.acceleration[1] = ACCEL_ZERO_G + ((int32_t)priv->input.acc_y * (ACCEL_ONE_G - ACCEL_ZERO_G)) / GUITAR_ACC_RES_PER_G;
-	device->wpadData.acceleration[2] = ACCEL_ZERO_G + ((int32_t)priv->input.acc_z * (ACCEL_ONE_G - ACCEL_ZERO_G)) / GUITAR_ACC_RES_PER_G;
+	device->wpadData.acceleration[0] = priv->input.acc_z;
+	device->wpadData.acceleration[1] = priv->input.acc_x;
+	device->wpadData.acceleration[2] = priv->input.acc_y;
 	uint32_t buttons = priv->input.buttons;
 	uint16_t guitar_buttons = 0;
 	for (int i = 0; i < GUITAR_BUTTON__NUM; i++) {
@@ -241,9 +243,9 @@ int gh_guitar_driver_ops_usb_async_resp(usb_input_device_t *device)
 	gh_guitar_get_buttons(report, &priv->input.buttons);
 	gh_guitar_get_analog_axis(report, priv->input.analog_axis);
 
-	priv->input.acc_x = (int16_t)report->acc_x - 511;
-	priv->input.acc_y = 511 - (int16_t)report->acc_y;
-	priv->input.acc_z = 511 - (int16_t)report->acc_z;
+	priv->input.acc_x = (int16_t)le16toh(report->acc_x) - 511;
+	priv->input.acc_y = 511 - (int16_t)le16toh(report->acc_y);
+	priv->input.acc_z = 511 - (int16_t)le16toh(report->acc_z);
 	gh_guitar_report_input(device);
 	cpu_isr_restore(isr);
 	return gh_guitar_request_data(device);

@@ -129,6 +129,7 @@ static inline bool usb_driver_is_comaptible(uint16_t vid, uint16_t pid, const st
 extern const usb_device_driver_t gh_guitar_usb_device_driver;
 extern const usb_device_driver_t gh_drum_usb_device_driver;
 extern const usb_device_driver_t turntable_usb_device_driver;
+extern const usb_device_driver_t santroller_usb_device_driver;
 
 
 /* Used by USB device drivers */
