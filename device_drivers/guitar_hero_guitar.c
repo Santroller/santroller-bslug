@@ -218,7 +218,7 @@ bool gh_guitar_report_input(usb_input_device_t *device)
 		buttons >>= 1;
 	}
 	device->wpadData.extension_data.guitar.buttons = guitar_buttons;
-	device->wpadData.extension_data.guitar.whammy = priv->input.analog_axis[GUITAR_ANALOG_AXIS_WHAMMY_BAR];
+	device->wpadData.extension_data.guitar.whammy = priv->input.analog_axis[GUITAR_ANALOG_AXIS_WHAMMY_BAR] - 0x80;
 	device->wpadData.status = WPAD_STATUS_OK;
 	// TODO: tap bar
 

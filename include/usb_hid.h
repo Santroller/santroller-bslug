@@ -16,44 +16,6 @@
 typedef struct usb_device_driver_t usb_device_driver_t;
 typedef struct usb_input_device_t usb_input_device_t;
 
-typedef struct usb_input_device_t {
-	bool valid;
-	bool real;
-	bool suspended;
-	/* VID and PID */
-	uint16_t vid;
-	uint16_t pid;
-	uint16_t max_packet_len_in;
-	uint16_t max_packet_len_out;
-	uint8_t endpoint_address_in;
-	uint8_t endpoint_address_out;
-    uint8_t wiimote;
-	/* Used to communicate with Wii's USB module */
-	int host_fd;
-    bool dpdEnabled;
-	uint32_t dev_id;
-    WPADDataFormat_t format;
-    WPADDataFormat_t currentFormat;
-    WPADStatus_t status;
-    WPADExtension_t extension;
-    WPADData_t input;
-    WPADAccGravityUnit_t gravityUnit[2]; 
-    WPADConnectCallback_t connectCallback;
-    WPADExtensionCallback_t extensionCallback;
-    WPADSamplingCallback_t samplingCallback;
-    WPADControlDpdCallback_t controlDpdCallback;
-    void *autoSamplingBuffer;
-    int autoSamplingBufferCount;
-    int autoSamplingBufferIndex;
-	/* Driver that handles this device */
-	const usb_device_driver_t *driver;
-	/* Buffer where we store the USB async respones */
-	uint8_t usb_async_resp[128] IOS_ALIGN;
-    WPADData_t wpadData;
-	/* Bytes for private data (usage up to the device driver) */
-	uint8_t private_data[USB_INPUT_DEVICE_PRIVATE_DATA_SIZE] __attribute__((aligned(4)));
-} usb_input_device_t;
-
 typedef struct usb_device_driver_t {
 	bool (*probe)(uint16_t vid, uint16_t pid);
 	int (*init)(usb_input_device_t *device);
@@ -110,6 +72,49 @@ struct device_id_t {
 	uint16_t vid;
 	uint16_t pid;
 };
+
+
+
+typedef struct usb_input_device_t {
+	bool valid;
+	bool real;
+	bool suspended;
+	/* VID and PID */
+	uint16_t vid;
+	uint16_t pid;
+	uint16_t max_packet_len_in;
+	uint16_t max_packet_len_out;
+	uint8_t endpoint_address_in;
+	uint8_t endpoint_address_out;
+    uint8_t wiimote;
+	/* Used to communicate with Wii's USB module */
+	int host_fd;
+    bool dpdEnabled;
+	uint32_t dev_id;
+	uint16_t number;
+    WPADDataFormat_t format;
+    WPADDataFormat_t currentFormat;
+    WPADStatus_t status;
+    WPADExtension_t extension;
+    WPADData_t input;
+    WPADAccGravityUnit_t gravityUnit[2]; 
+    WPADConnectCallback_t connectCallback;
+    WPADExtensionCallback_t extensionCallback;
+    WPADSamplingCallback_t samplingCallback;
+    WPADControlDpdCallback_t controlDpdCallback;
+    void *autoSamplingBuffer;
+    int autoSamplingBufferCount;
+    int autoSamplingBufferIndex;
+	/* Driver that handles this device */
+	const usb_device_driver_t *driver;
+	/* Buffer where we store the USB async respones */
+	uint8_t usb_async_resp[128] IOS_ALIGN;
+	struct usb_hid_v4_transfer transferV4 IOS_ALIGN; 
+	struct usb_hid_v5_transfer transferV5 IOS_ALIGN;
+    WPADData_t wpadData;
+	/* Bytes for private data (usage up to the device driver) */
+	uint8_t private_data[USB_INPUT_DEVICE_PRIVATE_DATA_SIZE] __attribute__((aligned(4)));
+} usb_input_device_t;
 
 static inline bool usb_driver_is_comaptible(uint16_t vid, uint16_t pid, const struct device_id_t *ids, int num)
 {

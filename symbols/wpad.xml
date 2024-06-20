@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Symbols in the rvl/WPAD.h header -->
+<symbols>
+    <symbol name="WPADRead" size="0x1A0" offset="0x3C">
+		<data>
+			7C000034 5400DE3E 1C000060 7C640214
+		</data>
+	</symbol>
+    <symbol name="WPADRead" size="0xe4" offset="0x28">
+		<data>
+			7FE5002E ???????? 881F08C8 7C7E1B78
+		</data>
+	</symbol>
+	<symbol name="WPADRead" size="0x174" offset="0x30">
+		<data>
+			7c7f1b78 7fa4002e 881d0806 80bd07fc 7c000034
+		</data>
+	</symbol>
+	<symbol name="WPADInit" size="0x248" offset="0x44">
+		<data>
+			418201ec 4bfcd909 3c80cd00 800400c0 
+		</data>
+        <reloc type="b" offset="0x48" symbol="OSDisableInterrupts" />
+	</symbol>
+	<symbol name="WPADInit" size="0x248" offset="0x44">
+		<data>
+			418201f8 4bfcd909 3c80cd00 800400c0 
+		</data>
+        <reloc type="b" offset="0x48" symbol="OSDisableInterrupts" />
+	</symbol>
+	<symbol name="WPADInit" size="0x210" offset="0x18">
+		<data>
+			3bff9b80 4bfcd909 3c80cd00 800400c0 
+		</data>
+        <reloc type="lo" offset="0x18" />
+        <reloc type="b" offset="0x1c" symbol="OSDisableInterrupts" />
+	</symbol>
+	<!-- Offset changes and log messages added -->
+	<symbol name="WPADSetSamplingCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e407e8 93c407e8
+		</data>
+	</symbol>
+	<symbol name="WPADSetSamplingCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e408a8 93c408a8
+		</data>
+	</symbol>
+	<symbol name="WPADSetSamplingCallback" size="0x88" offset="0x5c">
+		<data>
+			83df08a8 93bf08a8
+		</data>
+	</symbol>
+	<symbol name="WPADSetConnectCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e407e4 93c407e4
+		</data>
+	</symbol>
+	<symbol name="WPADSetConnectCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e408a4 93c408a4
+		</data>
+	</symbol>
+	<symbol name="WPADSetConnectCallback" size="0x88" offset="0x5c">
+		<data>
+			83df08a4 93bf08a4
+		</data>
+	</symbol>
+	<symbol name="WPADSetExtensionCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e407e0 93c407e0
+		</data>
+	</symbol>
+	<symbol name="WPADSetExtensionCallback" size="0x68" offset="0x3c">
+		<data>
+			7C84002e 83e408a0 93c408a0
+		</data>
+	</symbol>
+	<symbol name="WPADSetExtensionCallback" size="0x5c" offset="0x30">
+		<data>
+			83df08a0 93bf08a0
+		</data>
+	</symbol>
+	<!-- New version is longer -->
+	<symbol name="WPADSetDataFormat" size="0xb0" offset="0x2c">
+		<data>
+			83bf081c 83df07fc 839f07f8
+		</data>
+	</symbol>
+	<symbol name="WPADSetDataFormat" size="0xb8" offset="0x2c">
+		<data>
+			83bf08dc 83df08bc 839f08b8
+		</data>
+	</symbol>
+	<!-- First WPADGetDataFormat is just a guess; never actually seen it! -->
+	<symbol name="WPADGetDataFormat" size="0x48" offset="0x24">
+		<data>
+			7c84002e 83e407f8
+		</data>
+	</symbol>
+	<symbol name="WPADGetDataFormat" size="0x48" offset="0x24">
+		<data>
+			7c84002e 83e408b8
+		</data>
+	</symbol>
+	<symbol name="WPADGetDataFormat" size="0x44" offset="0x1c">
+		<data>
+			7fe4002e 4bfcffd1 83ff08b8
+		</data>
+        <reloc type="b" offset="0x20" symbol="OSDisableInterrupts" />
+	</symbol>
+	<symbol name="WPADProbe" size="0x8c" offset="0x4c">
+		<data>
+			280000fd 4082000c 3bc0ffff
+		</data>
+	</symbol>
+	<symbol name="WPADIsDpdEnabled" size="0x44" offset="0x1c">
+		<data>
+			7fe4002e 4bfc9ef5 83ff0778
+		</data>
+        <reloc type="b" offset="0x20" symbol="OSDisableInterrupts" />
+	</symbol>
+	<symbol name="WPADIsDpdEnabled" size="0x44" offset="0x1c">
+		<data>
+			7fe4002e 4bfc9ef5 83ff0838
+		</data>
+        <reloc type="b" offset="0x20" symbol="OSDisableInterrupts" />
+	</symbol>
+	<symbol name="WPADControlDpd" size="0xe80" offset="0x34">
+		<data>
+			835d0778 833d07fc 83dd081c 
+		</data>
+	</symbol>
+	<symbol name="WPADControlDpd" size="0x107c" offset="0x34">
+		<data>
+			835d0838 8b3d08cc 831d08bc 83dd08dc
+		</data>
+	</symbol>
+	<!-- A new version removes the logging -->
+	<symbol name="WPADSetAutoSamplingBuf" size="0x17c" offset="0x40">
+		<data>
+			7c7b1b78 7f84002e 3ba0fffc 801c
+		</data>
+	</symbol>
+	<symbol name="WPADSetAutoSamplingBuf" size="0x1ac" offset="0x34">
+		<data>
+			7C7B1B78 3BC0FFFC 2C00FFFF 40820008
+		</data>
+	</symbol>
+	<symbol name="WPADGetLatestIndexInBuf" size="0x58" offset="0x30">
+		<data>
+			387F0001 201FFFFF 7C6000F8 7C00FE70
+		</data>
+	</symbol>
+	<symbol name="WPADGetAccGravityUnit" size="0xd8" offset="0x20">
+		<data>
+			93C10018 93A10014 7C9D2378 7FC6002E
+		</data>
+	</symbol>
+</symbols>	
