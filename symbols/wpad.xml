@@ -177,11 +177,6 @@
 			93C10018 93A10014 7C9D2378 7FC6002E
 		</data>
 	</symbol>
-	<symbol name="WPADGetAccGravityUnit" size="0xd8" offset="0x20">
-		<data>
-			93C10018 93A10014 7C9D2378 7FC6002E
-		</data>
-	</symbol>
 	<symbol name="WPADControlMotor" size="0x204" offset="0x2c">
 		<data>
 			801f08bc 2c00ffff
