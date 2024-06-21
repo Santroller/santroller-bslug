@@ -42,6 +42,7 @@
  * compatible. */
 
 #include <bslug.h>
+#include <rvl/OSTime.h>
 #include <rvl/Pad.h>
 #include <rvl/WPAD.h>
 #include <rvl/cache.h>
@@ -53,10 +54,9 @@
 
 #include "defines.h"
 #include "usb_hid.h"
-#include <rvl/OSTime.h>
 
 BSLUG_MODULE_GAME("????");
-BSLUG_MODULE_NAME("USB Instrument Support");
+BSLUG_MODULE_NAME("Guitar Hero USB Instrument Support");
 BSLUG_MODULE_VERSION("v1.0");
 BSLUG_MODULE_AUTHOR("sanjay900");
 BSLUG_MODULE_LICENSE("BSD");
@@ -111,7 +111,7 @@ static const usb_device_driver_t *usb_device_drivers[] = {
     &gh_guitar_usb_device_driver,
     &gh_drum_usb_device_driver,
     &turntable_usb_device_driver,
-	&santroller_usb_device_driver};
+    &santroller_usb_device_driver};
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 /*============================================================================*/
 /* Top level interface to game */
@@ -135,9 +135,6 @@ static void MyWPADRead(int wiiremote, WPADData_t *data) {
         cpu_isr_restore(isr);
     } else {
         WPADRead(wiiremote, data);
-        if (data->extension != last_ext) {
-            last_ext = data->extension;
-        }
     }
 }
 
@@ -190,6 +187,7 @@ static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExten
 
 static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
     // remember their callback
+    printf("          set auto sample cb!\r\n");
     if (fake_devices[wiimote].valid) {
         WPADSamplingCallback_t prev = fake_devices[wiimote].samplingCallback;
         fake_devices[wiimote].samplingCallback = newCallback;
@@ -203,6 +201,7 @@ static void MyWPADSetAutoSamplingBuf(int wiimote, void *buffer, int count) {
         WPADSetAutoSamplingBuf(wiimote, buffer, count);
         return;
     }
+    printf("          set auto sample buf!\r\n");
     uint32_t isr = cpu_isr_disable();
     fake_devices[wiimote].autoSamplingBuffer = buffer;
     fake_devices[wiimote].autoSamplingBufferCount = count;
@@ -220,7 +219,6 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
         WPADGetAccGravityUnit(wiimote, extension, result);
         return;
     }
-    printf("accel unit\r\n");
     uint32_t isr = cpu_isr_disable();
     if (extension == WPAD_EXTENSION_NONE) {
         *result = fake_devices[wiimote].gravityUnit[0];
@@ -269,7 +267,14 @@ static bool MyWPADIsDpdEnabled(int wiimote) {
 static bool MySCGetScreenSaverMode() {
     return false;
 }
-
+static void MyWPADControlMotor(int wiimote, int cmd) {
+    if (!fake_devices[wiimote].valid) {
+        WPADControlMotor(wiimote, cmd);
+        return;
+    }
+    printf("motor! %d %d\r\n", wiimote, cmd);
+}
+BSLUG_REPLACE(WPADControlMotor, MyWPADControlMotor);
 BSLUG_MUST_REPLACE(WPADRead, MyWPADRead);
 BSLUG_MUST_REPLACE(WPADInit, MyWPADInit);
 BSLUG_MUST_REPLACE(WPADSetConnectCallback, MyWPADSetConnectCallback);
@@ -525,7 +530,6 @@ static inline void build_v4_intr_transfer(struct usb_hid_v4_transfer *transfer, 
 static inline int usb_hid_v4_ctrl_transfer_async(usb_input_device_t *device, uint8_t bmRequestType,
                                                  uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength,
                                                  void *rpData) {
-
     build_v4_ctrl_transfer(&device->transferV4, device->dev_id, bmRequestType, bmRequest, wValue, wIndex, wLength, rpData);
 
     return IOS_IoctlAsync(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_CONTROL, &device->transferV4, sizeof(device->transferV4), NULL, 0,
@@ -533,7 +537,6 @@ static inline int usb_hid_v4_ctrl_transfer_async(usb_input_device_t *device, uin
 }
 
 static inline int usb_hid_v4_intr_transfer_async(usb_input_device_t *device, bool out, void *rpData, uint16_t length) {
-
     if (out) {
         build_v4_intr_transfer(&device->transferV4, device->dev_id, device->endpoint_address_out, length, rpData);
         return IOS_IoctlAsync(dev_usb_hid_fd, DEV_USB_HID4_IOCTL_INTERRUPT_OUT, &device->transferV4, sizeof(device->transferV4), NULL, 0,
@@ -875,9 +878,10 @@ static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount) {
             printf("       Found device v5 %04x %04x!\r\n", vid_pid, device_id);
             driver = NULL;
             for (int i = 0; i < ARRAY_SIZE(usb_device_drivers); i++) {
-                if (usb_device_drivers[i]->probe(vid, pid))
+                if (usb_device_drivers[i]->probe(vid, pid)) {
                     driver = usb_device_drivers[i];
-                break;
+                    break;
+                }
             }
             if (driver != NULL) {
                 for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {

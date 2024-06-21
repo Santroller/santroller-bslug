@@ -171,6 +171,7 @@ int gh_guitar_driver_ops_init(usb_input_device_t *device)
 	device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
 	device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
 	device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
+	
 	ret = gh_guitar_request_data(device);
 	if (ret < 0)
 		return ret;
@@ -206,19 +207,20 @@ bool gh_guitar_report_input(usb_input_device_t *device)
 {
 	struct gh_guitar_private_data_t *priv = (void *)device->private_data;
 
-	bm_map_wiimote(GUITAR_BUTTON__NUM, priv->input.buttons,
-				   guitar_mapping.wiimote_button_map,
-				   &device->wpadData.buttons);
 	device->wpadData.acceleration[0] = priv->input.acc_z;
 	device->wpadData.acceleration[1] = priv->input.acc_x;
 	device->wpadData.acceleration[2] = priv->input.acc_y;
 	uint32_t buttons = priv->input.buttons;
+	uint16_t wiimote_buttons = 0;
 	uint16_t guitar_buttons = 0;
 	for (int i = 0; i < GUITAR_BUTTON__NUM; i++) {
-		if (buttons & 1)
+		if (buttons & 1) {
+			wiimote_buttons |= guitar_mapping.wiimote_button_map[i];
 			guitar_buttons |= guitar_mapping.guitar_button_map[i];
+		}
 		buttons >>= 1;
 	}
+	device->wpadData.buttons = wiimote_buttons;
 	device->wpadData.extension_data.guitar.buttons = guitar_buttons;
 	device->wpadData.extension_data.guitar.whammy = priv->input.analog_axis[GUITAR_ANALOG_AXIS_WHAMMY_BAR] - 0x80;
 	device->wpadData.status = WPAD_STATUS_OK;
@@ -226,18 +228,8 @@ bool gh_guitar_report_input(usb_input_device_t *device)
 
 	return true;
 }
-static uint32_t cpu_isr_disable(void) {
-    uint32_t isr, tmp;
-    asm volatile("mfmsr %0; rlwinm %1, %0, 0, 0xFFFF7FFF; mtmsr %1" : "=r"(isr), "=r"(tmp));
-    return isr;
-}
-static void cpu_isr_restore(uint32_t isr) {
-    uint32_t tmp;
-    asm volatile("mfmsr %0; rlwimi %0, %1, 0, 0x8000; mtmsr %0" : "=&r"(tmp) : "r"(isr));
-}
 int gh_guitar_driver_ops_usb_async_resp(usb_input_device_t *device)
 {
-	uint32_t isr = cpu_isr_disable();
 	struct gh_guitar_private_data_t *priv = (void *)device->private_data;
 	struct guitar_input_report *report = (void *)device->usb_async_resp;
 	gh_guitar_get_buttons(report, &priv->input.buttons);
@@ -247,7 +239,6 @@ int gh_guitar_driver_ops_usb_async_resp(usb_input_device_t *device)
 	priv->input.acc_y = 511 - (int16_t)le16toh(report->acc_y);
 	priv->input.acc_z = 511 - (int16_t)le16toh(report->acc_z);
 	gh_guitar_report_input(device);
-	cpu_isr_restore(isr);
 	return gh_guitar_request_data(device);
 }
 

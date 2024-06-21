@@ -55,6 +55,7 @@ void WPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPADAccGravit
 WPADStatus_t WPADProbe(int wiimote, WPADExtension_t *extension);
 int WPADControlDpd(int wiimote, int command, WPADControlDpdCallback_t callback);
 bool WPADIsDpdEnabled(int wiimote);
+void WPADControlMotor(int wiimote, int cmd);
 
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format);
 

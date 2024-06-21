@@ -3,7 +3,7 @@
 #include "usb_hid.h"
 #include "wiimote.h"
 #include "rvl/WPAD.h"
-
+#include <stdio.h>
 struct turntable_input_report {
 	uint8_t			: 4;
 	uint8_t triangle_euphoria : 1;
@@ -28,7 +28,7 @@ struct turntable_input_report {
 	uint8_t pressure_blue;
 	uint8_t pressure_kick;
 	uint8_t pressure_orange;
-	uint8_t unused3[2];
+	uint8_t unused3[6];
 	uint16_t effects_knob;
 	uint16_t cross_fader;
 	uint16_t right_green : 1;
@@ -161,7 +161,7 @@ static inline void turntable_get_analog_axis(const struct turntable_input_report
 static inline int turntable_request_data(usb_input_device_t *device)
 {
 	return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp,
-							   device->max_packet_len_in);
+							   sizeof(struct turntable_input_report));
 }
 
 static int turntable_driver_update_leds(usb_input_device_t *device)
@@ -222,7 +222,6 @@ int turntable_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot)
 bool turntable_report_input(usb_input_device_t *device)
 {
 	struct turntable_private_data_t *priv = (void *)device->private_data;
-	uint16_t wiimote_buttons = 0;
 	union wiimote_extension_data_t extension_data;
 
 	bm_map_wiimote(TURNTABLE_BUTTON__NUM, priv->input.buttons,
@@ -234,6 +233,9 @@ bool turntable_report_input(usb_input_device_t *device)
 				  turntable_mapping.turntable_button_map,
 				  turntable_mapping.turntable_analog_axis_map,
 				  &extension_data.turntable);
+	device->wpadData.extension_data.turntable.buttons = extension_data.turntable.bt.hex;
+
+	device->wpadData.status = WPAD_STATUS_OK;
 
 	return true;
 }
@@ -244,6 +246,7 @@ int turntable_driver_ops_usb_async_resp(usb_input_device_t *device)
 	struct turntable_input_report *report = (void *)device->usb_async_resp;
 	turntable_get_buttons(report, &priv->input.buttons);
 	turntable_get_analog_axis(report, priv->input.analog_axis);
+	turntable_report_input(device);
 
 	return turntable_request_data(device);
 }
