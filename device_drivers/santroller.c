@@ -62,20 +62,14 @@ bool santroller_report_input(usb_input_device_t *device)
 {
 	return true;
 }
-static uint32_t cpu_isr_disable(void) {
-    uint32_t isr, tmp;
-    asm volatile("mfmsr %0; rlwinm %1, %0, 0, 0xFFFF7FFF; mtmsr %1" : "=r"(isr), "=r"(tmp));
-    return isr;
-}
-static void cpu_isr_restore(uint32_t isr) {
-    uint32_t tmp;
-    asm volatile("mfmsr %0; rlwimi %0, %1, 0, 0x8000; mtmsr %0" : "=&r"(tmp) : "r"(isr));
-}
+uint32_t OSDisableInterrupts();
+uint32_t OSRestoreInterrupts(uint32_t isr);
 int santroller_driver_ops_usb_async_resp(usb_input_device_t *device)
 {
-	uint32_t isr = cpu_isr_disable();
-	cpu_isr_restore(isr);
-	return santroller_request_data(device);
+	uint32_t isr = OSDisableInterrupts();
+	int ret = santroller_request_data(device);
+	OSRestoreInterrupts(isr);
+	return ret;
 }
 
 const usb_device_driver_t santroller_usb_device_driver = {

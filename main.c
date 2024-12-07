@@ -117,14 +117,14 @@ static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 /* Top level interface to game */
 /*============================================================================*/
 // void VIResetDimmingCount(void);
-static uint32_t cpu_isr_disable(void);
-static void cpu_isr_restore(uint32_t isr);
+uint32_t OSDisableInterrupts();
+uint32_t OSRestoreInterrupts(uint32_t isr);
 static void onDevOpen(ios_fd_t fd, usr_t unused);
 uint16_t last = 0;
 uint8_t last_ext = 0;
 static void MyWPADRead(int wiiremote, WPADData_t *data) {
     if (fake_devices[wiiremote].valid) {
-        uint32_t isr = cpu_isr_disable();
+        uint32_t isr = OSDisableInterrupts();
         memset(data, 0, WPADDataFormatSize(fake_devices[wiiremote].currentFormat));
         if (fake_devices[wiiremote].currentFormat == fake_devices[wiiremote].format) {
             memcpy(data, &fake_devices[wiiremote].wpadData, WPADDataFormatSize(fake_devices[wiiremote].currentFormat));
@@ -132,20 +132,21 @@ static void MyWPADRead(int wiiremote, WPADData_t *data) {
             // Copy the fields common to all formats.
             memcpy(data, &fake_devices[wiiremote].wpadData, WPADDataFormatSize(WPAD_FORMAT_NONE));
         }
-        cpu_isr_restore(isr);
+        OSRestoreInterrupts(isr);
     } else {
         WPADRead(wiiremote, data);
     }
 }
 
 static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
-    if (fake_devices[wiimote].valid) {
-        uint32_t isr = cpu_isr_disable();
+    WPADStatus_t ret = WPADProbe(wiimote, extension);
+    if (fake_devices[wiimote].valid && extension) {
+        // printf("ext: %d %d %d %d\r\n", wiimote, fake_devices[wiimote].extension, *extension, ret);
+        // uint32_t isr = OSDisableInterrupts();
         *extension = fake_devices[wiimote].extension;
-        cpu_isr_restore(isr);
+        // OSRestoreInterrupts(isr);
         return WPAD_STATUS_OK;
     }
-    WPADStatus_t ret = WPADProbe(wiimote, extension);
     fake_devices[wiimote].real = ret == WPAD_STATUS_OK;
     return ret;
 }
@@ -153,7 +154,7 @@ static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
 static void MyWPADInit(void) {
     WPADInit();
     initCalled = true;
-    printf("\r\n\r\n\r\n    Instrument Support Starting\r\n");
+    printf("Instrument Support Starting\r\n");
     for (int i = 0; i < MAX_FAKE_WIIMOTES; i++) {
         memset(&fake_devices[i], 0, sizeof(usb_input_device_t));
         fake_devices[i].valid = 0;
@@ -163,10 +164,11 @@ static void MyWPADInit(void) {
     }
     /* On first call only, initialise USB and globals. */
     started = 1;
-    IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL);
+    printf("OpenAsync: %d\r\n", IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL));
 }
 
 static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback) {
+    // printf("set cc! %d\r\n", wiimote);
     // remember their callback
     fake_devices[wiimote].connectCallback = newCallback;
     if (fake_devices[wiimote].valid && newCallback) {
@@ -176,39 +178,41 @@ static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCa
 }
 
 static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback) {
+    // printf("set ec! %d\r\n", wiimote);
     if (fake_devices[wiimote].valid) {
-        WPADExtensionCallback_t prev = fake_devices[wiimote].extensionCallback;
-        // remember their callback
         fake_devices[wiimote].extensionCallback = newCallback;
-        return prev;
     }
     return WPADSetExtensionCallback(wiimote, newCallback);
 }
 
+void passedCB(int wiimote) {
+
+}
+
+
 static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
     // remember their callback
-    printf("          set auto sample cb!\r\n");
+    // printf("set auto sample cb! %d %d\r\n", wiimote, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
-        WPADSamplingCallback_t prev = fake_devices[wiimote].samplingCallback;
         fake_devices[wiimote].samplingCallback = newCallback;
-        return prev;
     }
-    return WPADSetSamplingCallback(wiimote, newCallback);
+    return WPADSetSamplingCallback(wiimote, passedCB);
 }
 
 static void MyWPADSetAutoSamplingBuf(int wiimote, void *buffer, int count) {
+    // printf("set auto sample buf! %d %d\r\n", wiimote, count);
+    WPADSetAutoSamplingBuf(wiimote, buffer, count);
     if (!fake_devices[wiimote].valid) {
-        WPADSetAutoSamplingBuf(wiimote, buffer, count);
         return;
     }
-    printf("          set auto sample buf!\r\n");
-    uint32_t isr = cpu_isr_disable();
+    uint32_t isr = OSDisableInterrupts();
     fake_devices[wiimote].autoSamplingBuffer = buffer;
     fake_devices[wiimote].autoSamplingBufferCount = count;
-    cpu_isr_restore(isr);
+    OSRestoreInterrupts(isr);
 }
 
 static int MyWPADGetLatestIndexInBuf(int wiimote) {
+    // printf("get auto sample buf! %d\r\n", wiimote);
     if (!fake_devices[wiimote].valid) {
         return WPADGetLatestIndexInBuf(wiimote);
     }
@@ -219,7 +223,7 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
         WPADGetAccGravityUnit(wiimote, extension, result);
         return;
     }
-    uint32_t isr = cpu_isr_disable();
+    uint32_t isr = OSDisableInterrupts();
     if (extension == WPAD_EXTENSION_NONE) {
         *result = fake_devices[wiimote].gravityUnit[0];
     } else if (extension == WPAD_EXTENSION_NUNCHUCK) {
@@ -229,10 +233,11 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
         result->acceleration[1] = 0;
         result->acceleration[2] = 0;
     }
-    cpu_isr_restore(isr);
+    OSRestoreInterrupts(isr);
 }
 
 static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
+    // printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].currentFormat = format;
         return WPAD_STATUS_OK;
@@ -241,6 +246,7 @@ static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
 }
 
 static WPADDataFormat_t MyWPADGetDataFormat(int wiimote) {
+    // printf("get df! %d %d %d\r\n", wiimote, fake_devices[wiimote].currentFormat, WPADGetDataFormat(wiimote));
     if (!fake_devices[wiimote].valid) {
         return WPADGetDataFormat(wiimote);
     }
@@ -292,16 +298,6 @@ BSLUG_REPLACE(SCGetScreenSaverMode, MySCGetScreenSaverMode);
 /*============================================================================*/
 /* USB support */
 /*============================================================================*/
-
-static uint32_t cpu_isr_disable(void) {
-    uint32_t isr, tmp;
-    asm volatile("mfmsr %0; rlwinm %1, %0, 0, 0xFFFF7FFF; mtmsr %1" : "=r"(isr), "=r"(tmp));
-    return isr;
-}
-static void cpu_isr_restore(uint32_t isr) {
-    uint32_t tmp;
-    asm volatile("mfmsr %0; rlwimi %0, %1, 0, 0x8000; mtmsr %0" : "=&r"(tmp) : "r"(isr));
-}
 
 static void callbackIgnore(ios_ret_t ret, usr_t unused);
 static void onDevUsbPoll(ios_ret_t ret, usr_t unused);
@@ -697,6 +693,7 @@ static void onDevGetVersion5(ios_ret_t ret, usr_t unused) {
 
 #ifdef SUPPORT_DEV_USB_HID4
 static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
+    printf("onDevUsbChange4 %d\r\n", ret);
     if (ret >= 0) {
         int found = 0;
         usb_input_device_t *device;
@@ -774,11 +771,11 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                             if (in) {
                                 packet_size_in = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFFFF;
                                 endpoint_address_in = addr;
-                                printf("          Found in endpoint %02x, size %04d\r\n", endpoint_address_in, packet_size_in);
+                                printf("Found in endpoint %02x, size %04d\r\n", endpoint_address_in, packet_size_in);
                             } else {
                                 packet_size_out = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFFFF;
                                 endpoint_address_out = addr;
-                                printf("          Found out endpoint %02x, size %04d\r\n", endpoint_address_out, packet_size_out);
+                                printf("Found out endpoint %02x, size %04d\r\n", endpoint_address_out, packet_size_out);
                             }
                             if (endpoint_address_in && endpoint_address_out) {
                                 break;
@@ -788,7 +785,7 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                             uint8_t class = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFF;
                             uint8_t subclass = (dev_usb_hid4_devices[i + j + 1] >> 8) & 0xFF;
                             uint8_t protocol = (dev_usb_hid4_devices[i + j + 1]) & 0xFF;
-                            printf("          Class: %02x, Subclass: %02x, Protocol: %02x\r\n", class, subclass, protocol);
+                            printf("Class: %02x, Subclass: %02x, Protocol: %02x\r\n", class, subclass, protocol);
                             is_hid = class == HID_INTF;
                         }
                         j += (len / 4) + 1;
@@ -799,11 +796,11 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                     device->max_packet_len_in = packet_size_in;
                     device->max_packet_len_out = packet_size_out;
                     found = 1;
-                    printf("          Found!\r\n");
+                    printf("Found!\r\n");
                     device->dev_id = device_id;
                     device->valid = true;
                     if (device->connectCallback != NULL) {
-                        printf("          Connect callback call!\r\n");
+                        printf("Connect callback call!\r\n");
                         device->connectCallback(device->wiimote, WPAD_STATUS_OK);
                     }
                     device->driver = driver;
@@ -895,12 +892,12 @@ static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount) {
                 }
                 if (!device->valid && !device->real) {
                     found = 1;
-                    printf("          Found!\r\n");
+                    printf("Found!\r\n");
                     device->dev_id = device_id;
                     device->valid = true;
                     device->driver = driver;
                     if (device->connectCallback != NULL) {
-                        printf("          Connect callback call!\r\n");
+                        printf("Connect callback call!\r\n");
                         device->connectCallback(device->wiimote, WPAD_STATUS_OK);
                     }
                     ret = sendResume5(onDevUsbResume5, device);

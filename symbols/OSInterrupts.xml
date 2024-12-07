@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<symbols>
+    <symbol name="OSDisableInterrupts" size="0x14" offset="0x0">
+        <data>
+            7c6000a6 5464045e 7c800124
+        </data>
+    </symbol>
+    <symbol name="OSEnableInterrupts" size="0x14" offset="0x0">
+        <data>
+            7c6000a6 60648000 7c800124
+        </data>
+    </symbol>
+    <symbol name="OSRestoreInterrupts" size="0x24" offset="0xC">
+        <data>
+            60858000 48000008 5485045e
+        </data>
+    </symbol>
+</symbols>
