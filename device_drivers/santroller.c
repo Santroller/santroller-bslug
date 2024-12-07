@@ -2,6 +2,7 @@
 #include "usb_hid.h"
 #include "wiimote.h"
 #include "rvl/WPAD.h"
+#include "rvl/OSInterrupts.h"
 #include <stdio.h>
 
 
@@ -62,8 +63,6 @@ bool santroller_report_input(usb_input_device_t *device)
 {
 	return true;
 }
-uint32_t OSDisableInterrupts();
-uint32_t OSRestoreInterrupts(uint32_t isr);
 int santroller_driver_ops_usb_async_resp(usb_input_device_t *device)
 {
 	uint32_t isr = OSDisableInterrupts();

@@ -47,6 +47,7 @@
 #include <rvl/WPAD.h>
 #include <rvl/cache.h>
 #include <rvl/ipc.h>
+#include "rvl/OSInterrupts.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,9 +117,6 @@ static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 /*============================================================================*/
 /* Top level interface to game */
 /*============================================================================*/
-// void VIResetDimmingCount(void);
-uint32_t OSDisableInterrupts();
-uint32_t OSRestoreInterrupts(uint32_t isr);
 static void onDevOpen(ios_fd_t fd, usr_t unused);
 uint16_t last = 0;
 uint8_t last_ext = 0;
