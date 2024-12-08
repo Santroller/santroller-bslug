@@ -182,4 +182,14 @@
 			801f08bc 2c00ffff
 		</data>
 	</symbol>
+	<symbol name="WPADControlMotor" size="0x204" offset="0x2c">
+		<data>
+			801f08bc 2c00ffff
+		</data>
+	</symbol>
+	<symbol name="WPADWriteExtReg" size="0xD0" offset="0x24">
+		<data>
+			7fe9002e 7c982378 7cb92b78
+		</data>
+	</symbol>
 </symbols>	

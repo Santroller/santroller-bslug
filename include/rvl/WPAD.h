@@ -37,7 +37,9 @@ typedef struct WPADAccGravityUnit_t WPADAccGravityUnit_t;
 typedef enum WPADStatus_t WPADStatus_t;
 typedef enum WPADDataFormat_t WPADDataFormat_t;
 typedef enum WPADExtension_t WPADExtension_t;
+typedef enum WPADPeripheralSpace_t WPADPeripheralSpace_t;
 typedef void (*WPADConnectCallback_t)(int wiimote, WPADStatus_t status);
+typedef void (*WPADMemoryCallback_t)(int wiimote, WPADStatus_t status);
 typedef void (*WPADExtensionCallback_t)(int wiimote, WPADExtension_t extension);
 typedef void (*WPADSamplingCallback_t)(int wiimote);
 typedef void (*WPADControlDpdCallback_t)(int wiimote, int status);
@@ -56,11 +58,32 @@ WPADStatus_t WPADProbe(int wiimote, WPADExtension_t *extension);
 int WPADControlDpd(int wiimote, int command, WPADControlDpdCallback_t callback);
 bool WPADIsDpdEnabled(int wiimote);
 void WPADControlMotor(int wiimote, int cmd);
+void WPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeripheralSpace_t space, int address, WPADMemoryCallback_t callback);
 
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format);
 
 struct WPADData_t {
-    uint16_t buttons;
+    union {
+        uint16_t buttons;
+        struct {
+            uint16_t dpadLeft : 1;
+            uint16_t dpadRight : 1;
+            uint16_t dpadDown : 1;
+            uint16_t dpadUp : 1;
+            uint16_t plus : 1;
+            uint16_t : 1;
+            uint16_t : 1;
+            uint16_t : 1;
+            uint16_t two : 1;
+            uint16_t one : 1;
+            uint16_t b : 1;
+            uint16_t a : 1;
+            uint16_t minus : 1;
+            uint16_t  : 1;
+            uint16_t  : 1;
+            uint16_t home : 1;
+        };
+    };
     int16_t acceleration[3];  // x, y, z
     struct {
         int16_t x, y;
@@ -76,15 +99,55 @@ struct WPADData_t {
             uint8_t stick[2];
         } nunchuck;
         struct {
-            uint16_t buttons;
-            int16_t stickX[2];
-            int16_t stickY[2];
+            union {
+                uint16_t buttons;
+                struct {
+                    uint16_t dpadRight : 1;
+                    uint16_t dpadDown : 1;
+                    uint16_t lt : 1;
+                    uint16_t minus : 1;
+                    uint16_t home : 1;
+                    uint16_t plus : 1;
+                    uint16_t rt : 1;
+                    uint16_t : 1;
+                    uint16_t zl : 1;
+                    uint16_t b : 1;
+                    uint16_t y : 1;
+                    uint16_t a : 1;
+                    uint16_t x : 1;
+                    uint16_t zr : 1;
+                    uint16_t dpadLeft : 1;
+                    uint16_t dpadUp : 1;
+                };
+            };
+            int16_t leftStick[2];
+            int16_t rightStick[2];
             uint8_t trigger[2];
         } classic;
         struct {
-            uint16_t buttons;
+            union {
+                uint16_t buttons;
+                struct {
+                    uint16_t : 1;
+                    uint16_t dpadDown : 1;
+                    uint16_t : 1;
+                    uint16_t minus : 1;
+                    uint16_t : 1;
+                    uint16_t plus : 1;
+                    uint16_t : 1;
+                    uint16_t : 1;
+                    uint16_t orange : 1;
+                    uint16_t red : 1;
+                    uint16_t blue : 1;
+                    uint16_t green : 1;
+                    uint16_t yellow : 1;
+                    uint16_t pedal : 1;
+                    uint16_t : 1;
+                    uint16_t dpadUp : 1;
+                };
+            };
             int16_t stick[2];
-            int16_t unused;
+            int16_t : 16;
             // 128 (80): green
             // 192 (C0): green+red
             // 320 (140): red
@@ -96,11 +159,31 @@ struct WPADData_t {
             // 832 (340): blue+orange
             // 992 (3E0): orange
             int16_t tapbar;
-            uint8_t unused2;
+            uint8_t : 8;
             uint8_t whammy;  // 0x78 -> 0xd0
         } guitar;
         struct {
-            uint16_t buttons;
+            union {
+                uint16_t buttons;
+                struct {
+                    uint16_t : 1;
+                    uint16_t : 1;
+                    uint16_t : 1;
+                    uint16_t minus : 1;
+                    uint16_t : 1;
+                    uint16_t plus : 1;
+                    uint16_t : 1;
+                    uint16_t : 1;
+                    uint16_t orange : 1;
+                    uint16_t red : 1;
+                    uint16_t yellow : 1;
+                    uint16_t green : 1;
+                    uint16_t blue : 1;
+                    uint16_t pedal : 1;
+                    uint16_t : 1;
+                    uint16_t : 1;
+                };
+            };
             int16_t stick[2];
             int16_t unused;
             int16_t which;
@@ -108,12 +191,37 @@ struct WPADData_t {
             uint8_t whammy;
         } drum;
         struct {
-            uint16_t buttons;
-            int16_t stick[2];
-            int16_t unused;
-            int16_t which;
-            uint8_t unused2;
-            uint8_t whammy;
+            union {
+                uint16_t buttons;
+                struct {
+                    uint16_t : 2;
+                    uint16_t leftRed : 1;
+                    uint16_t minus : 1;
+                    uint16_t : 1;
+                    uint16_t plus : 1;
+                    uint16_t rightRed : 1;
+                    uint16_t ltt4 : 1;
+                    uint16_t leftBlue : 1;
+                    uint16_t : 1;
+                    uint16_t rightGreen : 1;
+                    uint16_t euphoria : 1;
+                    uint16_t leftGreen : 1;
+                    uint16_t rightBlue : 1;
+                    uint16_t : 2;
+                };
+            };
+            int16_t stick[2];  // -512 -> 512
+            uint16_t : 6;
+            uint16_t rtt40 : 5;
+            uint16_t : 5;
+            uint16_t : 6;
+            uint16_t crossFader : 4;  // 0 - 15, center at 8
+            uint16_t rtt5 : 1;
+            uint16_t : 5;
+            uint8_t effectsDial : 5;  // 0 - 32, center at 16
+            uint8_t : 3;
+            uint8_t ltt30 : 4;
+            uint8_t : 4;
         } turntable;
         uint8_t unknown[0x30];
     } extension_data;
@@ -162,6 +270,13 @@ enum WPADExtension_t {
     WPAD_EXTENSION_UNKNOWN = 255,
 };
 
+enum WPADPeripheralSpace_t {
+    WPAD_PERIPHERAL_SPACE_SPEAKER,
+    WPAD_PERIPHERAL_SPACE_EXTENSION,
+    WPAD_PERIPHERAL_SPACE_MOTIONPLUS,
+    WPAD_PERIPHERAL_SPACE_DPD
+};
+
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format) {
     switch (format) {
         case WPAD_FORMAT_NONE:
@@ -172,10 +287,10 @@ static inline size_t WPADDataFormatSize(WPADDataFormat_t format) {
         case WPAD_FORMAT_NUNCHUCK_ACC:
         case WPAD_FORMAT_NUNCHUCK_ACC_IR:
             return 0x32;
-		case WPAD_FORMAT_TURNTABLE:
+        case WPAD_FORMAT_TURNTABLE:
         case WPAD_FORMAT_DRUM:
         case WPAD_FORMAT_GUITAR:
-		case WPAD_FORMAT_CLASSIC:
+        case WPAD_FORMAT_CLASSIC:
         case WPAD_FORMAT_CLASSIC_ACC:
         case WPAD_FORMAT_CLASSIC_ACC_IR:
             return 0x36;

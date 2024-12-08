@@ -23,6 +23,9 @@
         "set": "c",
         "unordered_map": "c",
         "unordered_set": "c",
-        "vector": "c"
+        "vector": "c",
+        "__locale": "cpp",
+        "ios": "c",
+        "osinterrupts.h": "c"
     }
 }

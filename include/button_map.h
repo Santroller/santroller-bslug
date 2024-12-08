@@ -215,7 +215,7 @@ static inline void bm_turntable_format(struct wiimote_extension_data_format_turn
 	out->effects1 = effects_dial & 0x7;
 	out->ltt1 = ltt & 0x20;
 	out->crossfade = cross_fader;
-	out->bt.hex = (~buttons) & TURNTABLE_CTRL_BUTTON_ALL;
+	out->bt.hex = (buttons) & TURNTABLE_CTRL_BUTTON_ALL;
 	out->bt.ltt5 = ltt & (1<<5);
 }
 

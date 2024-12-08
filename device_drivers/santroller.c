@@ -47,15 +47,11 @@ static int santroller_driver_update_leds(usb_input_device_t *device)
 
 int santroller_driver_ops_disconnect(usb_input_device_t *device)
 {
-	struct santroller_private_data_t *priv = (void *)device->private_data;
-
 	return santroller_driver_update_leds(device);
 }
 
 int santroller_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot)
 {
-	struct santroller_private_data_t *priv = (void *)device->private_data;
-
 	return santroller_driver_update_leds(device);
 }
 
@@ -76,6 +72,5 @@ const usb_device_driver_t santroller_usb_device_driver = {
 	.init		= santroller_driver_ops_init,
 	.disconnect	= santroller_driver_ops_disconnect,
 	.slot_changed	= santroller_driver_ops_slot_changed,
-	.report_input	= santroller_report_input,
 	.usb_async_resp	= santroller_driver_ops_usb_async_resp,
 };

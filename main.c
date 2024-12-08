@@ -58,7 +58,7 @@
 
 BSLUG_MODULE_GAME("????");
 BSLUG_MODULE_NAME("Guitar Hero USB Instrument Support");
-BSLUG_MODULE_VERSION("v1.0");
+BSLUG_MODULE_VERSION("v1.1");
 BSLUG_MODULE_AUTHOR("sanjay900");
 BSLUG_MODULE_LICENSE("BSD");
 
@@ -235,7 +235,7 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
 }
 
 static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
-    // printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
+    printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].currentFormat = format;
         return WPAD_STATUS_OK;
@@ -276,7 +276,15 @@ static void MyWPADControlMotor(int wiimote, int cmd) {
         WPADControlMotor(wiimote, cmd);
         return;
     }
+    // GH games pulse rumble when star power is ready or active
     printf("motor! %d %d\r\n", wiimote, cmd);
+}
+static void MyWPADWriteExtReg(int wiimote, void* buffer, int size, WPADPeripheralSpace_t space, int address, WPADMemoryCallback_t callback) {
+    WPADWriteExtReg(wiimote, buffer, size, space, address, callback);
+    // DJH writes to this address to turn the euphoria led on and off
+    if (address == 0xFB && size == 1 && fake_devices[wiimote].valid) {
+        printf("DJH Euphoria LED: %d %d\r\n", wiimote, ((uint8_t*)buffer)[0]);
+    }
 }
 BSLUG_REPLACE(WPADControlMotor, MyWPADControlMotor);
 BSLUG_MUST_REPLACE(WPADRead, MyWPADRead);
@@ -293,6 +301,7 @@ BSLUG_MUST_REPLACE(WPADGetAccGravityUnit, MyWPADGetAccGravityUnit);
 BSLUG_REPLACE(WPADControlDpd, MyWPADControlDpd);
 BSLUG_MUST_REPLACE(WPADIsDpdEnabled, MyWPADIsDpdEnabled);
 BSLUG_REPLACE(SCGetScreenSaverMode, MySCGetScreenSaverMode);
+BSLUG_REPLACE(WPADWriteExtReg, MyWPADWriteExtReg);
 /*============================================================================*/
 /* USB support */
 /*============================================================================*/
