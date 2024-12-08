@@ -235,7 +235,7 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
 }
 
 static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
-    printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
+    // printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].currentFormat = format;
         return WPAD_STATUS_OK;
