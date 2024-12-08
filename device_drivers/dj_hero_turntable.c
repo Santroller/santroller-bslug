@@ -1,4 +1,3 @@
-#include "button_map.h"
 #include "defines.h"
 #include "usb_hid.h"
 #include "wiimote.h"
