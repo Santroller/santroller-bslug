@@ -3,4 +3,4 @@ PS3 / Santroller Guitar Hero BrainSlug module
 
 https://santroller.tangentmc.net/console_guides/wii.html
 
-This repository contains a BrainSlug module to allow support for emulating Wii instruments by plugging in PS3 instruments or Santroller devices to the wiis USB port. It has been tested with GH3 and GHWT. It currently does NOT work with DJ Hero but that is being worked on.
+This repository contains a BrainSlug module to allow support for emulating Wii instruments by plugging in PS3 instruments or Santroller devices to the wiis USB port. It has been tested with all the Guitar Hero games, Band Hero and both DJ Hero games.
