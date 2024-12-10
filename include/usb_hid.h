@@ -44,7 +44,9 @@ struct usb_hid_v5_transfer {
 		} ctrl;
 
 		struct {
-			uint32_t out;
+			void *rpData;
+			uint16_t wLength;
+			uint8_t bEndpoint;
 		} intr;
 
 		uint32_t data[14];
@@ -92,10 +94,12 @@ typedef struct usb_input_device_t {
 	uint8_t endpoint_address_out;
 	uint8_t sub_type;
 	uint8_t type;
+	uint8_t state;
     uint8_t wiimote;
 	/* Used to communicate with Wii's USB module */
 	ios_fd_t host_fd;
     bool dpdEnabled;
+	bool waiting;
 	uint32_t dev_id;
 	uint16_t number;
     WPADDataFormat_t format;

@@ -142,9 +142,11 @@ bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_
         device->wpadData.extension_data.guitar.stick[0] = 10;
     }
 
-    device->wpadData.extension_data.guitar.whammy = report->whammy_bar - 0x80;
+    device->wpadData.extension_data.guitar.whammy = report->whammy_bar;
     device->wpadData.status = WPAD_STATUS_OK;
+
     // TODO: tap bar
+    device->wpadData.extension_data.guitar.tapbar = 0x1E0;
 
     return true;
 }

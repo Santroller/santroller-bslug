@@ -202,20 +202,29 @@ static inline int xbox_controller_request_data(usb_input_device_t *device) {
 }
 
 bool xbox_controller_driver_ops_probe(uint16_t vid, uint16_t pid) {
-    // 360 controllers use a different probing mechanism
-    return false;
+    static const struct device_id_t compatible[] = {
+        {0x045e, 0x02a9}};
+
+    return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
 }
 
 static uint8_t capabilitiesRequest[12] IOS_ALIGN = {0x00, 0x00, 0x02, 0x80};
 static uint8_t request_controller_status[12] IOS_ALIGN = {0x08, 0x00, 0x0f, 0xC0};
-static uint8_t unknown[12] IOS_ALIGN = {0x08, 0x00, 0x00, 0xC0};
-static uint32_t dev_oh0_buffer[0x180] IOS_ALIGN;
+static uint8_t led[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0x41};
+static uint8_t disconnect[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0xC0};
+static uint8_t request_controller_status2[12] IOS_ALIGN = {0x08, 0x00, 0x05, 0xC0};
 
 int xbox_controller_driver_ops_init(usb_input_device_t *device) {
     int ret;
     if (device->type == XINPUT_TYPE_WIRELESS) {
-        // Request the controller status to kick things off
-        usb_device_driver_issue_intr_transfer_async(device, true, unknown, device->max_packet_len_in);
+        // We don't receive a link packet for devices that are already connected, so disconnect all of them
+        device->state = 0;
+
+        
+        ret = xbox_controller_request_data(device);
+        if (ret < 0)
+            return ret;
+
         return 0;
     }
 
@@ -296,8 +305,9 @@ bool xbox_controller_report_gh_guitar_input(const XInputGuitarHeroGuitar_Data_t 
     }
 
     device->wpadData.extension_data.guitar.whammy = report->whammy - 0x80;
-    device->wpadData.status = WPAD_STATUS_OK;
     // TODO: tap bar
+    device->wpadData.extension_data.guitar.tapbar = 0x1E0;
+    device->wpadData.status = WPAD_STATUS_OK;
 
     return true;
 }
@@ -400,13 +410,11 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                             ext = WPAD_EXTENSION_TURNTABLE;
                             df = WPAD_FORMAT_TURNTABLE;
                         }
-                        if (device->connectCallback != NULL) {
-                            device->connectCallback(device->wiimote, WPAD_STATUS_OK);
-                        }
                         device->extension = ext;
                         device->wpadData.extension = ext;
                         device->format = df;
                         if (device->extensionCallback) {
+                            printf("ext callback! %02x\r\n", device->wiimote);
                             device->extensionCallback(device->wiimote, device->extension);
                         }
                         device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
@@ -426,6 +434,10 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                 }
             }
         }
+    }
+    if (device->state == 0) {
+        device->state = 1;
+        return usb_device_driver_issue_intr_transfer_async(device, true, disconnect, sizeof(disconnect));
     }
     if (hasPacket) {
         if (device->sub_type == XINPUT_GUITAR_ALTERNATE || device->sub_type == XINPUT_GUITAR_WT) {
