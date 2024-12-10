@@ -811,6 +811,10 @@ static void onDevGetDesc2(ios_ret_t ret, usr_t user) {
         desc += bLength;
     }
     if (device->type != 0) {
+        if (device->connectCallback != NULL) {
+            printf("Connect callback call!\r\n");
+            device->connectCallback(device->wiimote, WPAD_STATUS_OK);
+        }
         device->driver->init(device);
     }
 }
