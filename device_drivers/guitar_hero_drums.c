@@ -1,4 +1,3 @@
-#include "button_map.h"
 #include "rvl/WPAD.h"
 #include "usb_hid.h"
 #include "wiimote.h"

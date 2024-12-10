@@ -47,13 +47,14 @@
 #include <rvl/WPAD.h>
 #include <rvl/cache.h>
 #include <rvl/ipc.h>
-#include "rvl/OSInterrupts.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "defines.h"
+#include "rvl/OSInterrupts.h"
+#include "usb.h"
 #include "usb_hid.h"
 
 BSLUG_MODULE_GAME("????");
@@ -75,21 +76,43 @@ BSLUG_MODULE_LICENSE("BSD");
 #define MAX_FAKE_WIIMOTES 4
 /* Path to the USB device interface. */
 #define DEV_USB_HID_PATH "/dev/usb/hid"
+#define DEV_USB_OH0_PATH "/dev/usb/oh0"
 
 #define BUFFER_SIZE 5
 #define USB_MAX_DEVICES 32
-#define DEV_USB_HID4_DEVICE_CHANGE_SIZE 0x180
-#define USB_DESCRIPTOR_DEVICE 0x01            // bDescriptorType for a Device Descriptor.
-#define USB_DESCRIPTOR_CONFIGURATION 0x02     // bDescriptorType for a Configuration Descriptor.
-#define USB_DESCRIPTOR_STRING 0x03            // bDescriptorType for a String Descriptor.
-#define USB_DESCRIPTOR_INTERFACE 0x04         // bDescriptorType for an Interface Descriptor.
-#define USB_DESCRIPTOR_ENDPOINT 0x05          // bDescriptorType for an Endpoint Descriptor.
-#define USB_DESCRIPTOR_DEVICE_QUALIFIER 0x06  // bDescriptorType for a Device Qualifier.
-#define USB_DESCRIPTOR_OTHER_SPEED 0x07       // bDescriptorType for a Other Speed Configuration.
-#define USB_DESCRIPTOR_INTERFACE_POWER 0x08   // bDescriptorType for Interface Power.
-#define USB_DESCRIPTOR_OTG 0x09               // bDescriptorType for an OTG Descriptor.
+#define USBV0_IOCTL_CTRLMSG 0
+#define USBV0_IOCTL_BLKMSG 1
+#define USBV0_IOCTL_INTRMSG 2
+#define USBV0_IOCTL_SUSPENDDEV 5
+#define USBV0_IOCTL_RESUMEDEV 6
+#define USBV0_IOCTL_ISOMSG 9
+#define USBV0_IOCTL_GETDEVLIST 12
+#define USBV0_IOCTL_DEVREMOVALHOOK 26
+#define USBV0_IOCTL_DEVINSERTHOOK 27
+#define USBV0_IOCTL_DEVICECLASSCHANGE 28
+#define USBV0_IOCTL_RESETDEVICE 29
 
-#define HID_DESCRIPTOR_HID 0x21
+#define USBV4_IOCTL_GETVERSION 6  // returns 0x40001
+#define USBV4_IOCTL_CANCELINTERRUPT 8
+
+#define USBV5_IOCTL_GETVERSION 0  // should return 0x50001
+#define USBV5_IOCTL_GETDEVICECHANGE 1
+#define USBV5_IOCTL_SHUTDOWN 2
+#define USBV5_IOCTL_GETDEVPARAMS 3
+#define USBV5_IOCTL_ATTACHFINISH 6
+#define USBV5_IOCTL_SETALTERNATE 7
+#define USBV5_IOCTL_SUSPEND_RESUME 16
+#define USBV5_IOCTL_CANCELENDPOINT 17
+#define USBV5_IOCTL_CTRLMSG 18
+#define USBV5_IOCTL_INTRMSG 19
+#define USBV5_IOCTL_ISOMSG 20
+#define USBV5_IOCTL_BULKMSG 21
+#define USBV5_IOCTL_MSC_READWRITE_ASYNC 32 /* unimplemented */
+#define USBV5_IOCTL_MSC_READ_ASYNC 33      /* unimplemented */
+#define USBV5_IOCTL_MSC_WRITE_ASYNC 34     /* unimplemented */
+#define USBV5_IOCTL_MSC_READWRITE 35       /* unimplemented */
+#define USBV5_IOCTL_MSC_RESET 36           /* unimplemented */
+#define DEV_USB_HID4_DEVICE_CHANGE_SIZE 0x180
 
 #define HID_INTF 0x03
 
@@ -112,12 +135,16 @@ static const usb_device_driver_t *usb_device_drivers[] = {
     &gh_guitar_usb_device_driver,
     &gh_drum_usb_device_driver,
     &turntable_usb_device_driver,
-    &santroller_usb_device_driver};
+    &santroller_usb_device_driver,
+    &xbox_controller_usb_device_driver};
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
+
+static uint32_t dev_oh0_devices[DEV_USB_HID4_DEVICE_CHANGE_SIZE] IOS_ALIGN;
 /*============================================================================*/
 /* Top level interface to game */
 /*============================================================================*/
 static void onDevOpen(ios_fd_t fd, usr_t unused);
+static void onDevOpenUsb(ios_fd_t fd, usr_t unused);
 uint16_t last = 0;
 uint8_t last_ext = 0;
 static void MyWPADRead(int wiiremote, WPADData_t *data) {
@@ -137,18 +164,21 @@ static void MyWPADRead(int wiiremote, WPADData_t *data) {
 }
 
 static WPADStatus_t MyWPADProbe(int wiimote, WPADExtension_t *extension) {
-    WPADStatus_t ret = WPADProbe(wiimote, extension);
-    if (fake_devices[wiimote].valid && extension) {
-        // printf("ext: %d %d %d %d\r\n", wiimote, fake_devices[wiimote].extension, *extension, ret);
+    if (fake_devices[wiimote].valid) {
         // uint32_t isr = OSDisableInterrupts();
-        *extension = fake_devices[wiimote].extension;
+        if (extension) {
+            *extension = fake_devices[wiimote].extension;
+        }
         // OSRestoreInterrupts(isr);
         return WPAD_STATUS_OK;
     }
+    
+    WPADStatus_t ret = WPADProbe(wiimote, extension);
     fake_devices[wiimote].real = ret == WPAD_STATUS_OK;
     return ret;
 }
 
+#define NUM_DESC 1
 static void MyWPADInit(void) {
     WPADInit();
     initCalled = true;
@@ -162,43 +192,40 @@ static void MyWPADInit(void) {
     }
     /* On first call only, initialise USB and globals. */
     started = 1;
+
     printf("OpenAsync: %d\r\n", IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL));
+    printf("OpenAsync3: %d\r\n", IOS_OpenAsync(DEV_USB_OH0_PATH, 0, onDevOpenUsb, NULL));
 }
 
 static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback) {
-    // printf("set cc! %d\r\n", wiimote);
-    // remember their callback
+    printf("Set sc\r\n");
     fake_devices[wiimote].connectCallback = newCallback;
-    if (fake_devices[wiimote].valid && newCallback) {
+    if (fake_devices[wiimote].valid) {
+        printf("calling cb\r\n");
         newCallback(wiimote, WPAD_STATUS_OK);
     }
-    return WPADSetConnectCallback(wiimote, newCallback);
+    return 0;
 }
 
 static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback) {
-    // printf("set ec! %d\r\n", wiimote);
-    if (fake_devices[wiimote].valid) {
-        fake_devices[wiimote].extensionCallback = newCallback;
-    }
-    return WPADSetExtensionCallback(wiimote, newCallback);
-}
-
-void passedCB(int wiimote) {
-
+    printf("Set ec\r\n");
+    fake_devices[wiimote].extensionCallback = newCallback;
+    return 0;
 }
 
 
 static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
     // remember their callback
-    // printf("set auto sample cb! %d %d\r\n", wiimote, fake_devices[wiimote].valid);
+    printf("set auto sample cb! %d %d\r\n", wiimote, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].samplingCallback = newCallback;
     }
-    return WPADSetSamplingCallback(wiimote, passedCB);
+    // return WPADSetSamplingCallback(wiimote, passedCB);
+    return 0;
 }
 
 static void MyWPADSetAutoSamplingBuf(int wiimote, void *buffer, int count) {
-    // printf("set auto sample buf! %d %d\r\n", wiimote, count);
+    printf("set auto sample buf! %d %d\r\n", wiimote, count);
     WPADSetAutoSamplingBuf(wiimote, buffer, count);
     if (!fake_devices[wiimote].valid) {
         return;
@@ -235,7 +262,7 @@ static void MyWPADGetAccGravityUnit(int wiimote, WPADExtension_t extension, WPAD
 }
 
 static int MyWPADSetDataFormat(int wiimote, WPADDataFormat_t format) {
-    // printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
+    printf("set df! %d %d %d\r\n", wiimote, format, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].currentFormat = format;
         return WPAD_STATUS_OK;
@@ -279,11 +306,11 @@ static void MyWPADControlMotor(int wiimote, int cmd) {
     // GH games pulse rumble when star power is ready or active
     printf("motor! %d %d\r\n", wiimote, cmd);
 }
-static void MyWPADWriteExtReg(int wiimote, void* buffer, int size, WPADPeripheralSpace_t space, int address, WPADMemoryCallback_t callback) {
+static void MyWPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeripheralSpace_t space, int address, WPADMemoryCallback_t callback) {
     WPADWriteExtReg(wiimote, buffer, size, space, address, callback);
     // DJH writes to this address to turn the euphoria led on and off
     if (address == 0xFB && size == 1 && fake_devices[wiimote].valid) {
-        printf("DJH Euphoria LED: %d %d\r\n", wiimote, ((uint8_t*)buffer)[0]);
+        printf("DJH Euphoria LED: %d %d\r\n", wiimote, ((uint8_t *)buffer)[0]);
     }
 }
 BSLUG_REPLACE(WPADControlMotor, MyWPADControlMotor);
@@ -406,6 +433,7 @@ static struct {
     uint8_t interface_number;
     uint8_t num_altsettings;
 } *dev_usb_hid5_devices;
+
 /* This buffer gets managed pretty carefully. During init it's split 0x20 bytes
  * to 0x60 bytes to store the descriptor. The rest of the time it's split
  * evenly, one half for rumble messages and one half for polls. Be careful! */
@@ -435,6 +463,107 @@ static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount);
 static void onDevUsbChange5(ios_ret_t ret, usr_t unused);
 static void onDevUsbResume5(ios_ret_t ret, usr_t unused);
 static void onDevUsbParams5(ios_ret_t ret, usr_t unused);
+
+static inline int usb_oh0_ctrl_transfer_async(usb_input_device_t *device, uint8_t bmRequestType,
+                                              uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength,
+                                              void *rpData, void (*callback)(int, void *)) {
+    static ioctlv vectors[7];
+
+    static uint8_t bmRequestTypeData __attribute__((aligned(32)));
+    static uint8_t bmRequestData __attribute__((aligned(32)));
+    static uint16_t wValueData __attribute__((aligned(32)));
+    static uint16_t wIndexData __attribute__((aligned(32)));
+    static uint16_t wLengthData __attribute__((aligned(32)));
+    static uint8_t unknownData __attribute__((aligned(32))) = 0;
+    bmRequestTypeData = bmRequestType;
+    bmRequestData = bmRequest;
+    wValueData = __builtin_bswap16(wValue);
+    wIndexData = __builtin_bswap16(wIndex);
+    wLengthData = __builtin_bswap16(wLength);
+    vectors[0].data = &bmRequestTypeData;
+    vectors[0].len = sizeof(bmRequestTypeData);
+    vectors[1].data = &bmRequestData;
+    vectors[1].len = sizeof(bmRequestData);
+    vectors[2].data = &wValueData;
+    vectors[2].len = sizeof(wValueData);
+    vectors[3].data = &wIndexData;
+    vectors[3].len = sizeof(wIndexData);
+    vectors[4].data = &wLengthData;
+    vectors[4].len = sizeof(wLengthData);
+    vectors[5].data = &unknownData;
+    vectors[5].len = sizeof(unknownData);
+    vectors[6].data = rpData;
+    vectors[6].len = wLength;
+
+    return IOS_IoctlvAsync(device->host_fd, USBV0_IOCTL_CTRLMSG, 6, 1, vectors,
+                           callback, device);
+}
+
+static inline int usb_oh0_ctrl_transfer(usb_input_device_t *device, uint8_t bmRequestType, uint8_t bmRequest,
+                                        uint16_t wValue, uint16_t wIndex, uint16_t wLength, void *rpData) {
+    static ioctlv vectors[7];
+    static uint8_t bmRequestTypeData __attribute__((aligned(32)));
+    static uint8_t bmRequestData __attribute__((aligned(32)));
+    static uint16_t wValueData __attribute__((aligned(32)));
+    static uint16_t wIndexData __attribute__((aligned(32)));
+    static uint16_t wLengthData __attribute__((aligned(32)));
+    static uint8_t unknownData __attribute__((aligned(32))) = 0;
+    bmRequestTypeData = bmRequestType;
+    bmRequestData = bmRequest;
+    wValueData = __builtin_bswap16(wValue);
+    wIndexData = __builtin_bswap16(wIndex);
+    wLengthData = __builtin_bswap16(wLength);
+    vectors[0].data = &bmRequestTypeData;
+    vectors[0].len = sizeof(bmRequestTypeData);
+    vectors[1].data = &bmRequestData;
+    vectors[1].len = sizeof(bmRequestData);
+    vectors[2].data = &wValueData;
+    vectors[2].len = sizeof(wValueData);
+    vectors[3].data = &wIndexData;
+    vectors[3].len = sizeof(wIndexData);
+    vectors[4].data = &wLengthData;
+    vectors[4].len = sizeof(wLengthData);
+    vectors[5].data = &unknownData;
+    vectors[5].len = sizeof(unknownData);
+    vectors[6].data = rpData;
+    vectors[6].len = wLength;
+
+    return IOS_Ioctlv(device->host_fd, USBV0_IOCTL_CTRLMSG, 6, 1, vectors);
+}
+
+static inline int usb_oh0_intr_transfer(usb_input_device_t *device, bool out, uint16_t wLength, void *rpData) {
+    static ioctlv vectors[3];
+
+    static uint8_t endpoint __attribute__((aligned(32)));
+    static uint16_t len __attribute__((aligned(32)));
+    endpoint = out ? device->endpoint_address_out : device->endpoint_address_in;
+    len = wLength;
+    vectors[0].data = &endpoint;
+    vectors[0].len = sizeof(endpoint);
+    vectors[1].data = &len;
+    vectors[1].len = sizeof(len);
+    vectors[2].data = rpData;
+    vectors[2].len = wLength;
+    return IOS_Ioctlv(device->host_fd, USBV0_IOCTL_INTRMSG, 2, 1, vectors);
+}
+
+static inline int usb_oh0_intr_transfer_async(usb_input_device_t *device, bool out, void *rpData, uint16_t wLength) {
+    static ioctlv vectors[3];
+
+    static uint8_t endpoint __attribute__((aligned(32)));
+    static uint16_t len __attribute__((aligned(32)));
+    endpoint = out ? device->endpoint_address_out : device->endpoint_address_in;
+    len = wLength;
+    vectors[0].data = &endpoint;
+    vectors[0].len = sizeof(endpoint);
+    vectors[1].data = &len;
+    vectors[1].len = sizeof(len);
+    vectors[2].data = rpData;
+    vectors[2].len = wLength;
+
+    return IOS_IoctlvAsync(device->host_fd, USBV0_IOCTL_INTRMSG, 2, 1, vectors,
+                           onDevUsbPoll, device);
+}
 
 static inline void build_v5_ctrl_transfer(struct usb_hid_v5_transfer *transfer, int dev_id,
                                           uint8_t bmRequestType, uint8_t bmRequest, uint16_t wValue, uint16_t wIndex) {
@@ -618,14 +747,137 @@ static int sendParams5(ios_cb_t cb, usr_t data) {
 #endif
 
 static void onError(void) {
-    dev_usb_hid_fd = -1;
     IOS_CloseAsync(dev_usb_hid_fd, callbackIgnore, NULL);
+    dev_usb_hid_fd = -1;
 }
 
+static uint32_t dev_oh0_buffer[0x180] IOS_ALIGN;
+static void onDevGetDesc2(ios_ret_t ret, usr_t user) {
+    usb_input_device_t *device = (usb_input_device_t*)user;
+    uint16_t size = __builtin_bswap16(dev_oh0_buffer[0]);
+    printf("Desc size2: %02x\r\n", size);
+    uint8_t *desc = (uint8_t *)dev_oh0_buffer;
+    uint8_t *end = desc + size;
+    bool found360 = false;
+    bool found360W = false;
+    while (desc < end) {
+        uint8_t bLength = desc[0];
+        uint8_t bDescriptorType = desc[1];
+        printf("Len: %01x\r\n", bLength);
+        printf("Type: %01x\r\n", bDescriptorType);
+        if (bDescriptorType == USB_DT_INTERFACE) {
+            usb_interfacedesc *intf = (usb_interfacedesc *)desc;
+            printf("Class: %02x %02x %02x\r\n", intf->bInterfaceClass, intf->bInterfaceSubClass, intf->bInterfaceProtocol);
+            if (intf->bInterfaceClass == 0xFF && intf->bInterfaceSubClass == 0x5D && intf->bInterfaceProtocol == 0x01) {
+                printf("Found Xbox 360 Wired Controller!\r\n");
+                desc += bLength;
+                // Xbox desc directly follows interface desc
+                xboxiddesc *idf = (xboxiddesc *)desc;
+                printf("Subtype: %02x\r\n", idf->subtype);
+                device->endpoint_address_in = idf->bEndpointAddressIn;
+                device->endpoint_address_out = idf->bEndpointAddressOut;
+                device->max_packet_len_in = idf->bMaxDataSizeIn;
+                device->max_packet_len_out = idf->bMaxDataSizeOut;
+                device->sub_type = idf->subtype;
+                found360 = true;
+                device->type = XINPUT_TYPE_WIRED;
+                // We found what we are looking for
+                break;
+            }
+            if (intf->bInterfaceClass == 0xFF && intf->bInterfaceSubClass == 0x5D && intf->bInterfaceProtocol == 0x81) {
+                printf("Found Xbox 360 Wireless receiver!\r\n");
+                desc += bLength;
+                bLength = desc[0];
+                bDescriptorType = desc[1];
+                // Skip over 0x22 descriptor
+                desc += bLength;
+                uint8_t endpoints = intf->bNumEndpoints;
+                while (endpoints--) {
+                    usb_endpointdesc *desc_ep = (usb_endpointdesc *)desc;
+                    if (desc_ep->bEndpointAddress & 0x80) {
+                        device->endpoint_address_in = desc_ep->bEndpointAddress;
+                        device->max_packet_len_in = __builtin_bswap16(desc_ep->wMaxPacketSize);
+                    } else {
+                        device->endpoint_address_out = desc_ep->bEndpointAddress;
+                        device->max_packet_len_out = __builtin_bswap16(desc_ep->wMaxPacketSize);
+                    }
+                    desc += desc_ep->bLength;
+                }
+                found360W = true;
+                device->type = XINPUT_TYPE_WIRELESS;
+                // We found what we are looking for
+                break;
+            }
+        }
+        desc += bLength;
+    }
+    if (device->type != 0) {
+        device->driver->init(device);
+    }
+}
+static void onDevGetDesc1(ios_ret_t ret, usr_t user) {
+    usb_input_device_t *device = (usb_input_device_t*)user;
+    uint16_t size = __builtin_bswap16(dev_oh0_buffer[0]);
+    printf("Desc size1: %02x\r\n", size);
+    usb_oh0_ctrl_transfer_async(device, 0b10000000, 0x06, USB_DT_CONFIG << 8, 0, size, dev_oh0_buffer, onDevGetDesc2);
+}
+
+static void onDevOpenUsbv0(ios_fd_t fd, usr_t usr) {
+    usb_input_device_t *device = (usb_input_device_t*)usr;
+    const usb_device_driver_t *driver = &xbox_controller_usb_device_driver;
+    device->host_fd = fd;
+    device->driver = driver;
+    device->valid = true;
+    usb_oh0_ctrl_transfer_async(device, 0b10000000, 0x06, USB_DT_CONFIG << 8, 0, 4, dev_oh0_buffer, onDevGetDesc1);
+}
 /*============================================================================*/
 /* Start of USB callback chain. Each method calls another as a callback after an
  * IOS command. */
 /*============================================================================*/
+static ios_fd_t usb_fd;
+static uint8_t num_descr __attribute__((aligned(32))) = 1;
+static uint8_t iclass __attribute__((aligned(32))) = 0xFF;
+static uint8_t cntdevs __attribute__((aligned(32))) = 0;
+static void onUsbV0DevList(ios_ret_t ret, usr_t user) {
+    IOS_CloseAsync(usb_fd, callbackIgnore, NULL);
+    usb_fd = -1;
+    printf("Devices: %d\r\n", cntdevs);
+    while (cntdevs--) {
+        uint16_t vid = (uint16_t)(dev_oh0_devices[cntdevs * 2 + 1] >> 16);
+        uint16_t pid = (uint16_t)dev_oh0_devices[cntdevs * 2 + 1];
+
+        usb_input_device_t *device;
+        printf("Found device oh0 %04x %04x!\r\n", vid, pid);
+        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+            device = &fake_devices[i];
+            if (device->valid || device->real)
+                continue;
+            break;
+        }
+        if (!device->valid && !device->real) {
+            char devicepath[23];
+            printf("VID: %04x, PID: %04x\r\n", vid, pid);
+            snprintf(devicepath, sizeof(devicepath), "/dev/usb/oh0/%x/%x", vid, pid);
+            printf("Dev path: %s\r\n", devicepath);
+
+            printf("OpenAsync Dev: %d\r\n", IOS_OpenAsync(devicepath, 0, onDevOpenUsbv0, device));            
+        }
+    }
+}
+
+static void onDevOpenUsb(ios_fd_t fd, usr_t unused) {
+    static ioctlv vectors[4];
+    vectors[0].data = &num_descr;
+    vectors[0].len = 1;
+    vectors[1].data = &iclass;
+    vectors[1].len = 1;
+    vectors[2].data = &cntdevs;
+    vectors[2].len = 1;
+    vectors[3].data = dev_oh0_devices;
+    vectors[3].len = num_descr << 3;
+    usb_fd = fd;
+    IOS_IoctlvAsync(fd, USBV0_IOCTL_GETDEVLIST, 2, 2, vectors, onUsbV0DevList, NULL);
+}
 
 static void onDevOpen(ios_fd_t fd, usr_t unused) {
     int ret;
@@ -713,7 +965,7 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
         uint16_t vid, pid;
         for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
             device = &fake_devices[i];
-            if (!device->valid)
+            if (!device->valid || device->host_fd)
                 continue;
 
             found = false;
@@ -772,7 +1024,7 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                         uint8_t len = (dev_usb_hid4_devices[i + j] >> 24) & 0xFF;
                         uint8_t type = (dev_usb_hid4_devices[i + j] >> 16) & 0xFF;
                         printf("Found desc: %02x %02x\r\n", type, len);
-                        if (type == USB_DESCRIPTOR_ENDPOINT && is_hid) {
+                        if (type == USB_DT_ENDPOINT && is_hid) {
                             uint8_t addr = (dev_usb_hid4_devices[i + j] >> 8) & 0xFF;
                             int in = (addr & USB_ENDPOINT_IN);
                             if (in) {
@@ -788,12 +1040,12 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                                 break;
                             }
                         }
-                        if (type == USB_DESCRIPTOR_INTERFACE) {
+                        if (type == USB_DT_INTERFACE) {
                             uint8_t class = (dev_usb_hid4_devices[i + j + 1] >> 16) & 0xFF;
                             uint8_t subclass = (dev_usb_hid4_devices[i + j + 1] >> 8) & 0xFF;
                             uint8_t protocol = (dev_usb_hid4_devices[i + j + 1]) & 0xFF;
                             printf("Class: %02x, Subclass: %02x, Protocol: %02x\r\n", class, subclass, protocol);
-                            is_hid = class == HID_INTF;
+                            is_hid = class == USB_CLASS_HID;
                         }
                         j += (len / 4) + 1;
                     }
@@ -974,6 +1226,9 @@ static void onDevUsbParams5(ios_ret_t ret, usr_t user) {
 
 int usb_device_driver_issue_ctrl_transfer(usb_input_device_t *device, uint8_t requesttype,
                                           uint8_t request, uint16_t value, uint16_t index, void *data, uint16_t length) {
+    if (device->host_fd) {
+        return usb_oh0_ctrl_transfer(device, requesttype, request, value, index, length, data);
+    }
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
     if (version == 5)
@@ -989,6 +1244,9 @@ int usb_device_driver_issue_ctrl_transfer(usb_input_device_t *device, uint8_t re
     return -1;
 }
 int usb_device_driver_issue_intr_transfer(usb_input_device_t *device, bool out, void *data, uint16_t length) {
+    if (device->host_fd) {
+        return usb_oh0_intr_transfer(device, out, length, data);
+    }
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
     if (version == 5)
@@ -1006,6 +1264,9 @@ int usb_device_driver_issue_intr_transfer(usb_input_device_t *device, bool out, 
 
 int usb_device_driver_issue_ctrl_transfer_async(usb_input_device_t *device, uint8_t requesttype,
                                                 uint8_t request, uint16_t value, uint16_t index, void *data, uint16_t length) {
+    if (device->host_fd) {
+        return usb_oh0_ctrl_transfer_async(device, requesttype, request, value, index, length, data, onDevUsbPoll);
+    }
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
     if (version == 5)
@@ -1021,6 +1282,9 @@ int usb_device_driver_issue_ctrl_transfer_async(usb_input_device_t *device, uint
     return -1;
 }
 int usb_device_driver_issue_intr_transfer_async(usb_input_device_t *device, bool out, void *data, uint16_t length) {
+    if (device->host_fd) {
+        return usb_oh0_intr_transfer_async(device, out, data, length);
+    }
 #ifdef SUPPORT_DEV_USB_HID5
 #ifdef HAVE_VERSION
     if (version == 5)

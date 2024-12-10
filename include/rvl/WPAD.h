@@ -43,6 +43,20 @@ typedef void (*WPADMemoryCallback_t)(int wiimote, WPADStatus_t status);
 typedef void (*WPADExtensionCallback_t)(int wiimote, WPADExtension_t extension);
 typedef void (*WPADSamplingCallback_t)(int wiimote);
 typedef void (*WPADControlDpdCallback_t)(int wiimote, int status);
+typedef void (*WPADInfoCallback_t) ( int chan, int result );
+
+typedef struct 
+{
+    bool dpd;
+    bool speaker;
+    bool attach;
+    bool lowBat;
+    bool nearempty;
+    uint8_t battery;
+    uint8_t led;
+    uint8_t protocol;
+    uint8_t firmware;
+} WPADInfo_t;
 
 void WPADRead(int wiiremote, WPADData_t *data);
 void WPADInit(void);
@@ -59,7 +73,7 @@ int WPADControlDpd(int wiimote, int command, WPADControlDpdCallback_t callback);
 bool WPADIsDpdEnabled(int wiimote);
 void WPADControlMotor(int wiimote, int cmd);
 void WPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeripheralSpace_t space, int address, WPADMemoryCallback_t callback);
-
+int WPADGetInfoAsync(int wiimote, WPADInfo_t *info, WPADInfoCallback_t callback);
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format);
 
 struct WPADData_t {

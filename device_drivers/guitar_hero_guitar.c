@@ -1,7 +1,7 @@
-#include "button_map.h"
 #include "rvl/WPAD.h"
 #include "usb_hid.h"
 #include "wiimote.h"
+#include <stdio.h>
 
 #define GUITAR_ACC_RES_PER_G 113
 
@@ -54,7 +54,7 @@ static inline int gh_guitar_request_data(usb_input_device_t *device) {
 
 bool gh_guitar_driver_ops_probe(uint16_t vid, uint16_t pid) {
     static const struct device_id_t compatible[] = {
-        {SONY_INST_VID, GH_GUITAR_PID},
+        {SONY_INST_VID, GH_GUITAR_PID}
     };
 
     return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
@@ -123,14 +123,14 @@ bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_
     device->wpadData.extension_data.guitar.dpadUp = report->hat == 0 || report->hat == 1 || report->hat == 7;
     device->wpadData.extension_data.guitar.dpadDown = report->hat == 3 || report->hat == 4 || report->hat == 5;
     // UP
-    if (report->hat == 0 || report->hat == 1 || report->hat == 7) {
+    // if (report->hat == 0 || report->hat == 1 || report->hat == 7) {
         
         // device->wpadData.extension_data.guitar.stick[1] = 10;
-    }
+    // }
     // DOWN
-    if (report->hat == 3 || report->hat == 4 || report->hat == 5) {
+    // if (report->hat == 3 || report->hat == 4 || report->hat == 5) {
         // device->wpadData.extension_data.guitar.stick[1] = -10;
-    }
+    // }
 
     // LEFT
     if (report->hat == 1 || report->hat == 2 || report->hat == 3) {

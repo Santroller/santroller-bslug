@@ -1,6 +1,7 @@
 #include "stdint.h"
 #include "defines.h"
 #include "rvl/WPAD.h"
+#include <rvl/ipc.h>
 
 /* List of Vendor IDs */
 #define SONY_VID			0x054c
@@ -12,6 +13,10 @@
 #define GH_DRUM_PID			0x0120
 #define DJ_TURNTABLE_PID	0x0140
 #define SANTROLLER_PID		0x2882
+
+#define XINPUT_TYPE_WIRED 1
+#define XINPUT_TYPE_WIRELESS 2
+
 
 typedef struct usb_device_driver_t usb_device_driver_t;
 typedef struct usb_input_device_t usb_input_device_t;
@@ -85,9 +90,11 @@ typedef struct usb_input_device_t {
 	uint16_t max_packet_len_out;
 	uint8_t endpoint_address_in;
 	uint8_t endpoint_address_out;
+	uint8_t sub_type;
+	uint8_t type;
     uint8_t wiimote;
 	/* Used to communicate with Wii's USB module */
-	int host_fd;
+	ios_fd_t host_fd;
     bool dpdEnabled;
 	uint32_t dev_id;
 	uint16_t number;
@@ -129,6 +136,7 @@ extern const usb_device_driver_t gh_guitar_usb_device_driver;
 extern const usb_device_driver_t gh_drum_usb_device_driver;
 extern const usb_device_driver_t turntable_usb_device_driver;
 extern const usb_device_driver_t santroller_usb_device_driver;
+extern const usb_device_driver_t xbox_controller_usb_device_driver;
 
 
 /* Used by USB device drivers */

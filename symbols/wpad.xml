@@ -192,4 +192,10 @@
 			7fe9002e 7c982378 7cb92b78
 		</data>
 	</symbol>
+
+	<symbol name="WPADGetInfoAsync" size="0x38" offset="0x21">
+		<data>
+			7fc6002e 7c9f2378 7cbd2b78
+		</data>
+	</symbol>
 </symbols>	
