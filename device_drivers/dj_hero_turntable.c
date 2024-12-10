@@ -146,10 +146,11 @@ bool turntable_report_input(const struct turntable_input_report *report, usb_inp
 	if (report->hat == 5 || report->hat == 6 || report->hat == 7) {
 		device->wpadData.extension_data.turntable.stick[0] = 10;
 	}
+    // TODO: check turntable again
 	uint8_t ltt = report->left_turn_table_velocity >> 3;
 	device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
 	device->wpadData.extension_data.turntable.ltt30 = ltt;
-	uint8_t rtt = report->left_turn_table_velocity >> 4;
+	uint8_t rtt = report->right_turn_table_velocity >> 4;
 	device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
 	device->wpadData.extension_data.turntable.rtt40 = rtt;
 	device->wpadData.extension_data.turntable.crossFader = report->cross_fader >> 6;

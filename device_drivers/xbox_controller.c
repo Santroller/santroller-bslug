@@ -193,6 +193,50 @@ typedef struct
     uint8_t reserved_1[6];
 } __attribute__((packed)) XInputRockBandGuitar_Data_t;
 
+typedef struct
+{
+    uint8_t rid;
+    uint8_t rsize;
+
+    uint8_t : 1;
+    uint8_t : 1;
+    uint8_t back : 1;
+    uint8_t start : 1;
+
+    uint8_t dpadRight : 1;
+    uint8_t dpadLeft : 1;
+    uint8_t dpadDown : 1;
+    uint8_t dpadUp : 1;
+
+    uint8_t y : 1;  // euphoria
+    uint8_t x : 1;
+    uint8_t b : 1;
+    uint8_t a : 1;
+
+    uint8_t : 1;
+    uint8_t guide : 1;
+    uint8_t : 1;
+    uint8_t : 1;
+
+
+    uint8_t : 5;
+    uint8_t leftBlue : 1;
+    uint8_t leftRed : 1;
+    uint8_t leftGreen : 1;
+
+    uint8_t : 5;
+    uint8_t rightBlue : 1;
+    uint8_t rightRed : 1;
+    uint8_t rightGreen : 1;
+
+    int16_t leftTableVelocity;
+    int16_t rightTableVelocity;
+
+    int16_t effectsKnob;  // Whether or not this is signed doesn't really matter, as either way it's gonna loop over when it reaches min/max
+    int16_t crossfader;
+    uint8_t reserved_1[6];
+} __attribute__((packed)) XInputTurntable_Data_t;
+
 struct xbox_controller_private_data_t {
     uint8_t leds;
 };
@@ -275,6 +319,47 @@ int xbox_controller_driver_ops_slot_changed(usb_input_device_t *device, uint8_t 
     priv->leds = slot;
 
     return xbox_controller_driver_update_leds(device);
+}
+bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report, usb_input_device_t *device) {
+    device->wpadData.buttons = 0;
+    device->wpadData.home = report->guide;
+    device->wpadData.extension_data.turntable.buttons = 0;
+    device->wpadData.extension_data.turntable.leftBlue = report->leftBlue;
+    device->wpadData.extension_data.turntable.leftGreen = report->leftGreen;
+    device->wpadData.extension_data.turntable.leftRed = report->leftRed;
+    device->wpadData.extension_data.turntable.rightBlue = report->rightBlue;
+    device->wpadData.extension_data.turntable.rightGreen = report->rightGreen;
+    device->wpadData.extension_data.turntable.euphoria = report->y;
+    device->wpadData.extension_data.turntable.plus = report->start;
+    device->wpadData.extension_data.turntable.minus = report->back;
+
+    device->wpadData.extension_data.turntable.stick[0] = 0;
+    device->wpadData.extension_data.turntable.stick[1] = 0;
+    if (report->dpadUp) {
+        device->wpadData.extension_data.guitar.stick[1] = -10;
+    }
+    if (report->dpadDown) {
+        device->wpadData.extension_data.guitar.stick[1] = 10;
+    }
+    if (report->dpadLeft) {
+        device->wpadData.extension_data.guitar.stick[0] = -10;
+    }
+
+    if (report->dpadRight) {
+        device->wpadData.extension_data.guitar.stick[0] = 10;
+    }
+    device->wpadData.status = WPAD_STATUS_OK;
+    // TODO: check turntable again
+	uint8_t ltt = report->leftTableVelocity >> 3;
+	device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
+	device->wpadData.extension_data.turntable.ltt30 = ltt;
+	uint8_t rtt = report->rightTableVelocity >> 4;
+	device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
+	device->wpadData.extension_data.turntable.rtt40 = rtt;
+	device->wpadData.extension_data.turntable.crossFader = (report->crossfader+INT16_MAX) >> 12;
+	device->wpadData.extension_data.turntable.effectsDial = (report->effectsKnob+INT16_MAX) >> 11;
+
+    return true;
 }
 
 bool xbox_controller_report_gh_guitar_input(const XInputGuitarHeroGuitar_Data_t *report, usb_input_device_t *device) {
@@ -444,7 +529,9 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
             xbox_controller_report_gh_guitar_input((XInputGuitarHeroGuitar_Data_t *)device->usb_async_resp, device);
         } else if (device->sub_type == XINPUT_GUITAR || device->sub_type == XINPUT_GUITAR_BASS) {
             xbox_controller_report_rb_guitar_input((XInputRockBandGuitar_Data_t *)device->usb_async_resp, device);
-        } else {
+        } else if (device->sub_type == XINPUT_TURNTABLE) {
+            xbox_controller_report_turntable_input((XInputTurntable_Data_t *)device->usb_async_resp, device);
+        }else {
             xbox_controller_report_gamepad_input((XInputGamepad_Data_t *)device->usb_async_resp, device);
         }
     }
