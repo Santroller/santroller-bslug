@@ -1,7 +1,6 @@
 #include "rvl/WPAD.h"
 #include "usb_hid.h"
 #include "wiimote.h"
-#include <stdio.h>
 
 #define GUITAR_ACC_RES_PER_G 113
 
@@ -54,8 +53,7 @@ static inline int gh_guitar_request_data(usb_input_device_t *device) {
 
 bool gh_guitar_driver_ops_probe(uint16_t vid, uint16_t pid) {
     static const struct device_id_t compatible[] = {
-        {SONY_INST_VID, GH_GUITAR_PID}
-    };
+        {SONY_INST_VID, GH_GUITAR_PID}};
 
     return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
 }
@@ -71,7 +69,6 @@ int gh_guitar_driver_ops_init(usb_input_device_t *device) {
     device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
-
     ret = gh_guitar_request_data(device);
     if (ret < 0)
         return ret;
@@ -101,7 +98,6 @@ int gh_guitar_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) 
 }
 
 bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_device_t *device) {
-
     device->wpadData.acceleration[0] = (int16_t)le16toh(report->acc_x) - 511;
     device->wpadData.acceleration[1] = 511 - (int16_t)le16toh(report->acc_y);
     device->wpadData.acceleration[2] = 511 - (int16_t)le16toh(report->acc_z);
@@ -124,12 +120,12 @@ bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_
     device->wpadData.extension_data.guitar.dpadDown = report->hat == 3 || report->hat == 4 || report->hat == 5;
     // UP
     // if (report->hat == 0 || report->hat == 1 || report->hat == 7) {
-        
-        // device->wpadData.extension_data.guitar.stick[1] = 10;
+
+    // device->wpadData.extension_data.guitar.stick[1] = 10;
     // }
     // DOWN
     // if (report->hat == 3 || report->hat == 4 || report->hat == 5) {
-        // device->wpadData.extension_data.guitar.stick[1] = -10;
+    // device->wpadData.extension_data.guitar.stick[1] = -10;
     // }
 
     // LEFT
@@ -143,6 +139,9 @@ bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_
     }
 
     device->wpadData.extension_data.guitar.whammy = report->whammy_bar;
+    if (device->old_wpad) {
+        device->wpadData.extension_data.guitar.whammy = report->whammy_bar - 0x80;
+    }
     device->wpadData.status = WPAD_STATUS_OK;
 
     // TODO: tap bar

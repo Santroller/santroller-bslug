@@ -218,7 +218,6 @@ typedef struct
     uint8_t : 1;
     uint8_t : 1;
 
-
     uint8_t : 5;
     uint8_t leftBlue : 1;
     uint8_t leftRed : 1;
@@ -260,11 +259,11 @@ static uint8_t request_controller_status2[12] IOS_ALIGN = {0x08, 0x00, 0x05, 0xC
 
 int xbox_controller_driver_ops_init(usb_input_device_t *device) {
     int ret;
+
     if (device->type == XINPUT_TYPE_WIRELESS) {
         // We don't receive a link packet for devices that are already connected, so disconnect all of them
         device->state = 0;
 
-        
         ret = xbox_controller_request_data(device);
         if (ret < 0)
             return ret;
@@ -350,14 +349,14 @@ bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report
     }
     device->wpadData.status = WPAD_STATUS_OK;
     // TODO: check turntable again
-	uint8_t ltt = report->leftTableVelocity >> 3;
-	device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
-	device->wpadData.extension_data.turntable.ltt30 = ltt;
-	uint8_t rtt = report->rightTableVelocity >> 4;
-	device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
-	device->wpadData.extension_data.turntable.rtt40 = rtt;
-	device->wpadData.extension_data.turntable.crossFader = (report->crossfader+INT16_MAX) >> 12;
-	device->wpadData.extension_data.turntable.effectsDial = (report->effectsKnob+INT16_MAX) >> 11;
+    uint8_t ltt = report->leftTableVelocity >> 3;
+    device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
+    device->wpadData.extension_data.turntable.ltt30 = ltt;
+    uint8_t rtt = report->rightTableVelocity >> 4;
+    device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
+    device->wpadData.extension_data.turntable.rtt40 = rtt;
+    device->wpadData.extension_data.turntable.crossFader = (report->crossfader + INT16_MAX) >> 12;
+    device->wpadData.extension_data.turntable.effectsDial = (report->effectsKnob + INT16_MAX) >> 11;
 
     return true;
 }
@@ -388,8 +387,12 @@ bool xbox_controller_report_gh_guitar_input(const XInputGuitarHeroGuitar_Data_t 
     if (report->dpadRight) {
         device->wpadData.extension_data.guitar.stick[0] = 10;
     }
+    int16_t whammy = __builtin_bswap16(report->whammy);
 
-    device->wpadData.extension_data.guitar.whammy = report->whammy - 0x80;
+    device->wpadData.extension_data.guitar.whammy = ((whammy >> 8) + 0x80) >> 1;
+    if (!device->old_wpad) {
+        device->wpadData.extension_data.guitar.whammy += 0x80;
+    }
     // TODO: tap bar
     device->wpadData.extension_data.guitar.tapbar = 0x1E0;
     device->wpadData.status = WPAD_STATUS_OK;
@@ -531,7 +534,7 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
             xbox_controller_report_rb_guitar_input((XInputRockBandGuitar_Data_t *)device->usb_async_resp, device);
         } else if (device->sub_type == XINPUT_TURNTABLE) {
             xbox_controller_report_turntable_input((XInputTurntable_Data_t *)device->usb_async_resp, device);
-        }else {
+        } else {
             xbox_controller_report_gamepad_input((XInputGamepad_Data_t *)device->usb_async_resp, device);
         }
     }

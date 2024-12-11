@@ -12,3 +12,4 @@
 
 #define le16toh(x) __builtin_bswap16(x)
 #define htole16(x) __builtin_bswap16(x)
+#define BE16(i) ((((i) & 0xFF) << 8 | ((i) >> 8) & 0xFF) & 0xFFFF)

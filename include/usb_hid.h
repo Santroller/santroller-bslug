@@ -85,6 +85,7 @@ typedef struct usb_input_device_t {
 	bool valid;
 	bool real;
 	bool suspended;
+	bool old_wpad;
 	/* VID and PID */
 	uint16_t vid;
 	uint16_t pid;

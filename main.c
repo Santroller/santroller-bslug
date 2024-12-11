@@ -119,6 +119,7 @@ BSLUG_MODULE_LICENSE("BSD");
 
 #define USB_ENDPOINT_IN 0x80
 #define USB_ENDPOINT_OUT 0x00
+// TODO: we can just drop HIDv4 much like we dropped HIDv5, and just use the raw usb apis everywhere. The wii is already doing that as it is it appears.
 /*============================================================================*/
 /* Globals */
 /*============================================================================*/
@@ -185,12 +186,15 @@ static void MyWPADInit(void) {
     WPADInit();
     initCalled = true;
     printf("Instrument Support Starting\r\n");
+    char *gameid = (char *)0x80000000;
     for (int i = 0; i < MAX_FAKE_WIIMOTES; i++) {
         memset(&fake_devices[i], 0, sizeof(usb_input_device_t));
         fake_devices[i].valid = 0;
         fake_devices[i].real = 0;
         fake_devices[i].wiimote = i;
         fake_devices[i].autoSamplingBuffer = 0;
+        // GH3 and GH:A predate WPADGtr, and thus the whammy works differently
+        fake_devices[i].old_wpad = gameid[0] == 'R' && gameid[1] == 'G' && (gameid[2] == 'H' || gameid[2] == 'V');
     }
     /* On first call only, initialise USB and globals. */
     started = 1;
