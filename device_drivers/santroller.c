@@ -1,4 +1,3 @@
-#include "button_map.h"
 #include "usb_hid.h"
 #include "wiimote.h"
 #include "rvl/WPAD.h"
@@ -23,20 +22,10 @@ bool santroller_driver_ops_probe(uint16_t vid, uint16_t pid)
 
 int santroller_driver_ops_init(usb_input_device_t *device)
 {
-	int ret;
-	if (device->extensionCallback) {
-		device->extensionCallback(device->wiimote, WPAD_EXTENSION_GUITAR);
-	}
-	device->extension = WPAD_EXTENSION_GUITAR;
-	device->wpadData.extension = WPAD_EXTENSION_GUITAR;
-	device->format = WPAD_FORMAT_GUITAR;
 	// Send the ctrl transfer fakemote sends, to jump to PS3 mode. Not usually necessary but helps for dolphin
-	ret = usb_device_driver_issue_ctrl_transfer_async(device, 0xa1, 0x01, 0x03f2, 0x00, device->usb_async_resp,
+	usb_device_driver_issue_ctrl_transfer_async(device, 0xa1, 0x01, 0x03f2, 0x00, device->usb_async_resp,
 							   0x11);
-	if (ret < 0)
-		return ret;
-
-	return 0;
+	return -1;
 }
 
 static int santroller_driver_update_leds(usb_input_device_t *device)

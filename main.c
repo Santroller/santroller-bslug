@@ -59,7 +59,7 @@
 
 BSLUG_MODULE_GAME("????");
 BSLUG_MODULE_NAME("Guitar Hero USB Instrument Support");
-BSLUG_MODULE_VERSION("v1.4");
+BSLUG_MODULE_VERSION("v1.5");
 BSLUG_MODULE_AUTHOR("sanjay900");
 BSLUG_MODULE_LICENSE("BSD");
 
@@ -119,7 +119,6 @@ BSLUG_MODULE_LICENSE("BSD");
 
 #define USB_ENDPOINT_IN 0x80
 #define USB_ENDPOINT_OUT 0x00
-// TODO: we can just drop HIDv4 much like we dropped HIDv5, and just use the raw usb apis everywhere. The wii is already doing that as it is it appears.
 /*============================================================================*/
 /* Globals */
 /*============================================================================*/
@@ -200,27 +199,19 @@ static void MyWPADInit(void) {
     printf("OpenAsync: %d\r\n", IOS_OpenAsync(DEV_USB_HID_PATH, 0, onDevOpen, NULL));
 }
 
-void test(int wiimote, WPADStatus_t status) {
-    printf("Wii cb! %d %d\r\n", wiimote, status);
-    if (fake_devices[wiimote].valid) {
-        fake_devices[wiimote].connectCallback(wiimote, WPAD_STATUS_OK);
-    }
-}
-
 static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback) {
     printf("Set sc\r\n");
     fake_devices[wiimote].connectCallback = newCallback;
     fake_devices[wiimote].state = 2;
     // return 0;
-    return WPADSetConnectCallback(wiimote, test);
+    return WPADSetConnectCallback(wiimote, newCallback);
 }
 
 static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback) {
-    printf("Set ec %p\r\n", newCallback);
+    printf("Set ec\r\n");
     fake_devices[wiimote].extensionCallback = newCallback;
     fake_devices[wiimote].state = 1;
-    return 0;
-    // return WPADSetExtensionCallback(wiimote, newCallback);
+    return WPADSetExtensionCallback(wiimote, newCallback);
 }
 
 static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
@@ -229,14 +220,13 @@ static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplin
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].samplingCallback = newCallback;
     }
-    // return WPADSetSamplingCallback(wiimote, passedCB);
-    return 0;
+    return WPADSetSamplingCallback(wiimote, newCallback);
 }
 
 static void MyWPADSetAutoSamplingBuf(int wiimote, void *buffer, int count) {
     // printf("set auto sample buf! %d %d\r\n", wiimote, count);
-    WPADSetAutoSamplingBuf(wiimote, buffer, count);
     if (!fake_devices[wiimote].valid) {
+        WPADSetAutoSamplingBuf(wiimote, buffer, count);
         return;
     }
     uint32_t isr = OSDisableInterrupts();
