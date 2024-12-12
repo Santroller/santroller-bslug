@@ -77,11 +77,6 @@ int turntable_driver_ops_init(usb_input_device_t *device)
 	struct turntable_private_data_t *priv = (void *)device->private_data;
 	
 	priv->leds = 0;
-
-	if (device->extensionCallback) {
-		device->extensionCallback(device->wiimote, WPAD_EXTENSION_TURNTABLE);
-	}
-
 	device->extension = WPAD_EXTENSION_TURNTABLE;
 	device->wpadData.extension = WPAD_EXTENSION_TURNTABLE;
 	device->format = WPAD_FORMAT_TURNTABLE;

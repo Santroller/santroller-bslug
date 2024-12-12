@@ -43,9 +43,9 @@ typedef void (*WPADMemoryCallback_t)(int wiimote, WPADStatus_t status);
 typedef void (*WPADExtensionCallback_t)(int wiimote, WPADExtension_t extension);
 typedef void (*WPADSamplingCallback_t)(int wiimote);
 typedef void (*WPADControlDpdCallback_t)(int wiimote, int status);
-typedef void (*WPADInfoCallback_t) ( int chan, int result );
+typedef void (*WPADInfoCallback_t)(int wiimote, int status);
 
-typedef struct 
+typedef struct
 {
     bool dpd;
     bool speaker;
@@ -60,6 +60,7 @@ typedef struct
 
 void WPADRead(int wiiremote, WPADData_t *data);
 void WPADInit(void);
+int WPADGetStatus(void);
 WPADConnectCallback_t WPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback);
 WPADExtensionCallback_t WPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback);
 WPADSamplingCallback_t WPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback);
@@ -93,8 +94,8 @@ struct WPADData_t {
             uint16_t b : 1;
             uint16_t a : 1;
             uint16_t minus : 1;
-            uint16_t  : 1;
-            uint16_t  : 1;
+            uint16_t : 1;
+            uint16_t : 1;
             uint16_t home : 1;
         };
     };
@@ -248,6 +249,14 @@ struct WPADAccGravityUnit_t {
 enum WPADStatus_t {
     WPAD_STATUS_OK = 0,
     WPAD_STATUS_DISCONNECTED = -1,
+};
+
+enum WPADState_t {
+    WPAD_STATE_DISABLED = 0,
+    WPAD_STATE_ENABLING = 1,
+    WPAD_STATE_ENABLED = 2,
+    WPAD_STATE_SETUP = 3,
+    WPAD_STATE_DISABLING = 4
 };
 
 enum WPADDataFormat_t {

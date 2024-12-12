@@ -60,12 +60,10 @@ bool gh_guitar_driver_ops_probe(uint16_t vid, uint16_t pid) {
 
 int gh_guitar_driver_ops_init(usb_input_device_t *device) {
     int ret;
-    if (device->extensionCallback) {
-        device->extensionCallback(device->wiimote, WPAD_EXTENSION_GUITAR);
-    }
     device->extension = WPAD_EXTENSION_GUITAR;
     device->wpadData.extension = WPAD_EXTENSION_GUITAR;
     device->format = WPAD_FORMAT_GUITAR;
+    
     device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;

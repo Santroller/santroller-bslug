@@ -198,4 +198,11 @@
 			7fc6002e 7c9f2378 7cbd2b78
 		</data>
 	</symbol>
+
+
+	<symbol name="WPADGetStatus" size="0x38" offset="0x24">
+		<data>
+			7fe30774 83e1000c 80010014
+		</data>
+	</symbol>
 </symbols>	

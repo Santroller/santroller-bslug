@@ -56,11 +56,8 @@ bool gh_drum_driver_ops_probe(uint16_t vid, uint16_t pid) {
 
 int gh_drum_driver_ops_init(usb_input_device_t *device) {
     int ret;
-
-    if (device->extensionCallback) {
-        device->extensionCallback(device->wiimote, WPAD_EXTENSION_DRUM);
-    }
     device->extension = WPAD_EXTENSION_DRUM;
+    device->wpadData.extension = WPAD_EXTENSION_DRUM;
     device->format = WPAD_FORMAT_DRUM;
 
     ret = gh_drum_request_data(device);
