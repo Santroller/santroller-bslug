@@ -202,7 +202,6 @@ static void MyWPADInit(void) {
 static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCallback_t newCallback) {
     printf("Set sc\r\n");
     fake_devices[wiimote].connectCallback = newCallback;
-    fake_devices[wiimote].state = 2;
     // return 0;
     return WPADSetConnectCallback(wiimote, newCallback);
 }
@@ -210,7 +209,6 @@ static WPADConnectCallback_t MyWPADSetConnectCallback(int wiimote, WPADConnectCa
 static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExtensionCallback_t newCallback) {
     printf("Set ec\r\n");
     fake_devices[wiimote].extensionCallback = newCallback;
-    fake_devices[wiimote].state = 1;
     return WPADSetExtensionCallback(wiimote, newCallback);
 }
 
@@ -1406,15 +1404,15 @@ static void onDevUsbPoll(ios_ret_t ret, usr_t user) {
         if (device->samplingCallback != 0) {
             device->samplingCallback(device->wiimote);
         }
-        if (device->state == 1 && WPADGetStatus() == WPAD_STATE_SETUP) {
+        if (device->state == 1 && device->extensionCallback && WPADGetStatus() == WPAD_STATE_SETUP) {
             printf("call ec: %d %d\r\n", device->extension, WPADGetStatus());
             device->extensionCallback(device->wiimote, device->extension);
-            device->state = 0;
+            device->state = 2;
         }
-        if (device->state == 2 && WPADGetStatus() == WPAD_STATE_SETUP) {
+        if (device->state == 0 && device->connectCallback && WPADGetStatus() == WPAD_STATE_SETUP) {
             printf("call sc: %d %d\r\n", device->wiimote, WPADGetStatus());
             device->connectCallback(device->wiimote, WPAD_STATUS_OK);
-            device->state = 0;
+            device->state = 1;
         }
     }
     if (ret < 0) {
