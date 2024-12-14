@@ -56,6 +56,11 @@
 			83df08a8 93bf08a8
 		</data>
 	</symbol>
+	<symbol name="WPADSetSamplingCallback" size="0x88" offset="0x5c">
+		<data>
+			83df08ec 93bf08ec
+		</data>
+	</symbol>
 	<symbol name="WPADSetConnectCallback" size="0x68" offset="0x3c">
 		<data>
 			7C84002e 83e407e4 93c407e4

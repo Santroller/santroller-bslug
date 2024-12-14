@@ -216,7 +216,7 @@ static WPADExtensionCallback_t MyWPADSetExtensionCallback(int wiimote, WPADExten
 
 static WPADSamplingCallback_t MyWPADSetSamplingCallback(int wiimote, WPADSamplingCallback_t newCallback) {
     // remember their callback
-    // printf("set auto sample cb! %d %d\r\n", wiimote, fake_devices[wiimote].valid);
+    printf("set auto sample cb! %d %d\r\n", wiimote, fake_devices[wiimote].valid);
     if (fake_devices[wiimote].valid) {
         fake_devices[wiimote].samplingCallback = newCallback;
     }
