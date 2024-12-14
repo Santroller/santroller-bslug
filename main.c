@@ -1,7 +1,6 @@
 /* main.c
- *   by Alex Chadwick
- *
- * Copyright (C) 2017, Alex Chadwick
+ *   by Sanjay Govind
+ * Copyright (C) 2024, Sanjay Govind
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,24 +21,15 @@
  * SOFTWARE.
  */
 
-/* This module adds support for the USB GCN Adapter (WUP-028). It achieves this
- * by simply replacing the Wii's PADRead and PADControlMotor calls. When PADRead
- * is called for the first time, the module initialises. Thereafter, the reading
- * of the actual USB proceeds asynchronously and continuously and the PADRead
- * method just returns the result of the most recent message from the USB. The
- * outbound rumble control messages get inserted between inbound controller data
- * messages, as it seems like having both inbound and outbound messages
- * travelling independently can cause lock ups. */
+/* This module adds support for various USB instruments, and emulates a wii remote
+ * with the relevant extension connected. 
+ */
 
-/* Interfacing with the USB is done by the IOS on behalf of the game. The
- * interface that the IOS exposes differs by IOS version. This module uses the
- * /dev/usb/hid interface. I've not tested exhaustively but IOS36 doesn't
- * support /dev/usb/hid at all, so this module won't work there. IOS37
- * introduces /dev/usb/hid at version 4. Later, IOS58 changes /dev/usb/hid
- * completely to version 5. This module supports both version 4 and version 5 of
- * /dev/usb/hid which it detects dynamically. I don't know if any later IOSs
- * change /dev/usb/hid in a non-suported way, or if earlier IOSs may be
- * compatible. */
+/* We use /dev/usb/hid and /dev/usb/oh0 for handling usb devices on older IOSes
+ * and then where USBv5 is supported, we use /dev/usb/ven and /dev/usb/hid.
+ */
+
+// TODO: reimplement HIDv5, the actual wii does NOT let you use hid devices over /dev/usb/ven
 
 #include <bslug.h>
 #include <rvl/OSTime.h>
@@ -73,7 +63,7 @@ BSLUG_MODULE_LICENSE("BSD");
 #define SUPPORT_DEV_USB_HID5
 
 #define IOS_ALIGN __attribute__((aligned(32)))
-#define MAX_FAKE_WIIMOTES 8
+#define MAX_FAKE_WIIMOTES 4
 /* Path to the USB device interface. */
 #define DEV_USB_HID_PATH "/dev/usb/hid"
 #define DEV_USB_VEN_PATH "/dev/usb/ven"
@@ -138,6 +128,7 @@ static const usb_device_driver_t *usb_device_drivers[] = {
     &turntable_usb_device_driver,
     &santroller_usb_device_driver,
     &xbox_controller_usb_device_driver};
+
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 
 static uint32_t dev_oh0_devices[DEV_USB_HID4_DEVICE_CHANGE_SIZE] IOS_ALIGN;
@@ -188,7 +179,7 @@ static void MyWPADInit(void) {
         memset(&fake_devices[i], 0, sizeof(usb_input_device_t));
         fake_devices[i].valid = 0;
         fake_devices[i].real = 0;
-        fake_devices[i].wiimote = i;
+        fake_devices[i].wiimote = 0;
         fake_devices[i].autoSamplingBuffer = 0;
         // GH3 and GH:A predate WPADGtr, and thus the whammy works differently
         fake_devices[i].old_wpad = gameid[0] == 'R' && gameid[1] == 'G' && (gameid[2] == 'H' || gameid[2] == 'V');
@@ -808,7 +799,21 @@ static void onDevGetDesc2(ios_ret_t ret, usr_t user) {
         desc += bLength;
     }
     if (device->type != 0) {
-        device->driver->init(device);
+        if (device->driver->init(device) >= 0) {
+            printf("init done!\r\n");
+            // If it initialised, look for the next free slot
+            int lowest_free_slot = 0;
+            for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                usb_input_device_t *device2 = &fake_devices[i];
+                if (device2->valid) {
+                    lowest_free_slot = device2->wiimote + 1;
+                    break;
+                }
+            }
+            printf("slot: %d\r\n", lowest_free_slot);
+            device->wiimote = lowest_free_slot;
+            device->valid = true;
+        }
     }
 }
 static void onDevGetDesc1(ios_ret_t ret, usr_t user) {
@@ -959,7 +964,6 @@ static void onDevGetVersion5(ios_ret_t ret, usr_t unused) {
 static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
     printf("onDevUsbChange4 %d\r\n", ret);
     if (ret >= 0) {
-        int found = 0;
         usb_input_device_t *device;
         const usb_device_driver_t *driver;
         uint16_t packet_size_in = 128;
@@ -968,34 +972,7 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
         uint8_t endpoint_address_out = 0;
         uint32_t vid_pid;
         uint16_t vid, pid;
-        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
-            device = &fake_devices[i];
-            if (!device->valid || device->host_fd)
-                continue;
 
-            found = false;
-            for (int i = 0; i < DEV_USB_HID4_DEVICE_CHANGE_SIZE && dev_usb_hid4_devices[i] < sizeof(dev_usb_hid4_devices); i += dev_usb_hid4_devices[i] / 4) {
-                uint32_t device_id = dev_usb_hid4_devices[i + 1];
-                if (device->dev_id == device_id) {
-                    found = true;
-                    break;
-                }
-            }
-
-            /* Oops, it got disconnected */
-            if (!found) {
-                if (device->driver->disconnect)
-                    device->driver->disconnect(device);
-
-                if (device->connectCallback) {
-                    device->connectCallback(device->wiimote, WPAD_STATUS_DISCONNECTED);
-                }
-                /* Set this device as not valid */
-                device->valid = false;
-            }
-        }
-
-        found = false;
         for (int i = 0; i < DEV_USB_HID4_DEVICE_CHANGE_SIZE && dev_usb_hid4_devices[i] < sizeof(dev_usb_hid4_devices); i += dev_usb_hid4_devices[i] / 4) {
             uint32_t device_id = dev_usb_hid4_devices[i + 1];
             vid_pid = dev_usb_hid4_devices[i + 4];
@@ -1059,12 +1036,25 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
                     device->endpoint_address_out = endpoint_address_out;
                     device->max_packet_len_in = packet_size_in;
                     device->max_packet_len_out = packet_size_out;
-                    found = 1;
                     printf("Found!\r\n");
                     device->dev_id = device_id;
-                    device->valid = true;
                     device->driver = driver;
-                    device->driver->init(device);
+
+                    if (device->driver->init(device) >= 0) {
+                        printf("init done!\r\n");
+                        // If it initialised, look for the next free slot
+                        int lowest_free_slot = 0;
+                        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                            usb_input_device_t *device2 = &fake_devices[i];
+                            if (device2->valid) {
+                                lowest_free_slot = device2->wiimote + 1;
+                                break;
+                            }
+                        }
+                        printf("slot: %d\r\n", lowest_free_slot);
+                        device->wiimote = lowest_free_slot;
+                        device->valid = true;
+                    }
                 }
                 break;
             }
@@ -1154,7 +1144,6 @@ static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount) {
             if (!device->valid && !device->real) {
                 printf("Found!\r\n");
                 device->dev_id = device_id;
-                device->valid = true;
                 device->driver = driver;
                 device->waiting = true;
                 if (!found) {
@@ -1218,7 +1207,21 @@ static void onHidV5Desc(ios_ret_t ret, usr_t user) {
                     device->max_packet_len_out = idf->bMaxDataSizeOut;
                     device->sub_type = idf->subtype;
                     device->type = XINPUT_TYPE_WIRED;
-                    device->driver->init(device);
+                    if (device->driver->init(device) >= 0) {
+                        printf("init done!\r\n");
+                        // If it initialised, look for the next free slot
+                        int lowest_free_slot = 0;
+                        for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                            usb_input_device_t *device2 = &fake_devices[i];
+                            if (device2->valid) {
+                                lowest_free_slot = device2->wiimote + 1;
+                                break;
+                            }
+                        }
+                        printf("slot: %d\r\n", lowest_free_slot);
+                        device->wiimote = lowest_free_slot;
+                        device->valid = true;
+                    }
                     // We found what we are looking for
                     break;
                 }
@@ -1233,7 +1236,7 @@ static void onHidV5Desc(ios_ret_t ret, usr_t user) {
 }
 static void onDevUsbParams5(ios_ret_t ret, usr_t user) {
     usb_input_device_t *device = (usb_input_device_t *)user;
-    printf("params %d %02x\r\n", ret, device->dev_id);
+    printf("params %d %d %02x\r\n", ret, device->wiimote, device->dev_id);
     if (ret == 0) {
         usb_configurationdesc *dev = (usb_configurationdesc *)(dev_usb_hid5_buffer + 18);
         usb_interfacedesc *intf = (usb_interfacedesc *)(dev_usb_hid5_buffer + 21);
@@ -1270,7 +1273,21 @@ static void onDevUsbParams5(ios_ret_t ret, usr_t user) {
                 }
                 endp = (usb_endpointdesc *)(((uint8_t *)endp) + ((endp->bLength + 3) & ~3));
             }
-            device->driver->init(device);
+            if (device->driver->init(device) >= 0) {
+                printf("init done!\r\n");
+                // If it initialised, look for the next free slot
+                int lowest_free_slot = 0;
+                for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
+                    usb_input_device_t *device2 = &fake_devices[i];
+                    if (device2->valid) {
+                        lowest_free_slot = device2->wiimote + 1;
+                        break;
+                    }
+                }
+                printf("slot: %d\r\n", lowest_free_slot);
+                device->wiimote = lowest_free_slot;
+                device->valid = true;
+            }
         }
         /* 0-7 are already correct :) */
         dev_usb_hid5_buffer[8] = 0;
@@ -1417,6 +1434,15 @@ static void onDevUsbPoll(ios_ret_t ret, usr_t user) {
     }
     if (ret < 0) {
         printf("Error: %d\r\n", ret);
+        if (device->connectCallback && WPADGetStatus() == WPAD_STATE_SETUP) {
+            printf("call sc disconnect: %d %d\r\n", device->wiimote, WPADGetStatus());
+            device->connectCallback(device->wiimote, WPAD_STATUS_DISCONNECTED);
+            device->state = 1;
+        }
+        device->valid = false;
+        device->extensionCallback = NULL;
+        device->state = 0;
+
         error = ret;
         errorMethod = 9;
     }
