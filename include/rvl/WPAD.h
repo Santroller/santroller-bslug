@@ -77,7 +77,7 @@ void WPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeripheralSpace_t 
 int WPADGetInfoAsync(int wiimote, WPADInfo_t *info, WPADInfoCallback_t callback);
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format);
 
-struct WPADData_t {
+struct WPADData_t  {
     union {
         uint16_t buttons;
         struct {
@@ -215,7 +215,7 @@ struct WPADData_t {
                     uint16_t : 1;
                     uint16_t plus : 1;
                     uint16_t rightRed : 1;
-                    uint16_t ltt4 : 1;
+                    uint16_t ltt_sign : 1;
                     uint16_t leftBlue : 1;
                     uint16_t : 1;
                     uint16_t rightGreen : 1;
@@ -227,20 +227,20 @@ struct WPADData_t {
             };
             int16_t stick[2];  // -512 -> 512
             uint16_t : 6;
-            uint16_t rtt40 : 5;
+            uint16_t rtt : 5;
             uint16_t : 5;
             uint16_t : 6;
             uint16_t crossFader : 4;  // 0 - 15, center at 8
-            uint16_t rtt5 : 1;
+            uint16_t rtt_sign : 1;
             uint16_t : 5;
             uint8_t effectsDial : 5;  // 0 - 32, center at 16
             uint8_t : 3;
-            uint8_t ltt30 : 4;
-            uint8_t : 4;
+            uint8_t ltt : 5;
+            uint8_t : 3;
         } turntable;
         uint8_t unknown[0x30];
     } extension_data;
-};
+} __attribute__((packed));
 
 struct WPADAccGravityUnit_t {
     int16_t acceleration[3];  // x, y, z

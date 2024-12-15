@@ -251,11 +251,7 @@ bool xbox_controller_driver_ops_probe(uint16_t vid, uint16_t pid) {
     return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
 }
 
-static uint8_t capabilitiesRequest[12] IOS_ALIGN = {0x00, 0x00, 0x02, 0x80};
-static uint8_t request_controller_status[12] IOS_ALIGN = {0x08, 0x00, 0x0f, 0xC0};
-static uint8_t led[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0x41};
 static uint8_t disconnect[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0xC0};
-static uint8_t request_controller_status2[12] IOS_ALIGN = {0x08, 0x00, 0x05, 0xC0};
 
 int xbox_controller_driver_ops_init(usb_input_device_t *device) {
     int ret;
@@ -348,15 +344,14 @@ bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report
         device->wpadData.extension_data.guitar.stick[0] = 10;
     }
     device->wpadData.status = WPAD_STATUS_OK;
-    // TODO: check turntable again
-    uint8_t ltt = report->leftTableVelocity >> 3;
-    device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
-    device->wpadData.extension_data.turntable.ltt30 = ltt;
-    uint8_t rtt = report->rightTableVelocity >> 4;
-    device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
-    device->wpadData.extension_data.turntable.rtt40 = rtt;
-    device->wpadData.extension_data.turntable.crossFader = (report->crossfader + INT16_MAX) >> 12;
-    device->wpadData.extension_data.turntable.effectsDial = (report->effectsKnob + INT16_MAX) >> 11;
+    int8_t ltt = ((int16_t)__builtin_bswap16(report->leftTableVelocity)) >> 1;
+	device->wpadData.extension_data.turntable.ltt_sign = ltt >= 0;
+    device->wpadData.extension_data.turntable.ltt = ltt;
+    int8_t rtt = ((int16_t)__builtin_bswap16(report->rightTableVelocity)) >> 1;
+	device->wpadData.extension_data.turntable.rtt_sign = rtt < 0;
+    device->wpadData.extension_data.turntable.rtt = rtt;
+    device->wpadData.extension_data.turntable.crossFader = (__builtin_bswap16(report->crossfader) + INT16_MAX) >> 12;
+    device->wpadData.extension_data.turntable.effectsDial = (__builtin_bswap16(report->effectsKnob) + INT16_MAX) >> 11;
 
     return true;
 }
@@ -426,7 +421,12 @@ bool xbox_controller_report_rb_guitar_input(const XInputRockBandGuitar_Data_t *r
         device->wpadData.extension_data.guitar.stick[0] = 10;
     }
 
-    device->wpadData.extension_data.guitar.whammy = report->whammy - 0x80;
+    int16_t whammy = __builtin_bswap16(report->whammy);
+
+    device->wpadData.extension_data.guitar.whammy = ((whammy >> 8) + 0x80) >> 1;
+    if (!device->old_wpad) {
+        device->wpadData.extension_data.guitar.whammy += 0x80;
+    }
     device->wpadData.status = WPAD_STATUS_OK;
 
     return true;
@@ -447,10 +447,10 @@ bool xbox_controller_report_gamepad_input(const XInputGamepad_Data_t *report, us
     device->wpadData.extension_data.classic.dpadDown = report->dpadDown;
     device->wpadData.extension_data.classic.dpadLeft = report->dpadLeft;
     device->wpadData.extension_data.classic.dpadRight = report->dpadRight;
-    device->wpadData.extension_data.classic.leftStick[0] = report->leftStickX >> 6;
-    device->wpadData.extension_data.classic.leftStick[1] = report->leftStickY >> 6;
-    device->wpadData.extension_data.classic.rightStick[0] = report->rightStickX >> 6;
-    device->wpadData.extension_data.classic.rightStick[1] = report->rightStickY >> 6;
+    device->wpadData.extension_data.classic.leftStick[0] = __builtin_bswap16(report->leftStickX) >> 6;
+    device->wpadData.extension_data.classic.leftStick[1] = __builtin_bswap16(report->leftStickY) >> 6;
+    device->wpadData.extension_data.classic.rightStick[0] = __builtin_bswap16(report->rightStickX) >> 6;
+    device->wpadData.extension_data.classic.rightStick[1] = __builtin_bswap16(report->rightStickY) >> 6;
     device->wpadData.extension_data.classic.trigger[0] = report->leftTrigger;
     device->wpadData.extension_data.classic.trigger[1] = report->rightTrigger;
 

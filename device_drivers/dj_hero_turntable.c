@@ -30,18 +30,19 @@ struct turntable_input_report {
 	uint8_t unused3[6];
 	uint16_t effects_knob;
 	uint16_t cross_fader;
-	uint16_t right_green : 1;
-	uint16_t right_red : 1;
-	uint16_t right_blue : 1;
-	uint16_t left_green : 1;
-	uint16_t left_red : 1;
+	uint16_t : 1;
 	uint16_t left_blue : 1;
-	uint16_t : 3;
-	uint16_t table_neutral : 1;
-	uint16_t : 6;
+	uint16_t left_red : 1;
+	uint16_t left_green : 1;
+	uint16_t : 1;
+	uint16_t right_blue : 1;
+	uint16_t right_red : 1;
+	uint16_t right_green : 1;
+	uint16_t : 8;
 	uint16_t : 16;
 
 } __attribute__((packed));
+
 
 struct turntable_private_data_t {
 	uint8_t leds;
@@ -142,14 +143,14 @@ bool turntable_report_input(const struct turntable_input_report *report, usb_inp
 		device->wpadData.extension_data.turntable.stick[0] = 10;
 	}
     // TODO: check turntable again
-	uint8_t ltt = report->left_turn_table_velocity >> 3;
-	device->wpadData.extension_data.turntable.ltt4 = ltt & (1 << 4);
-	device->wpadData.extension_data.turntable.ltt30 = ltt;
-	uint8_t rtt = report->right_turn_table_velocity >> 4;
-	device->wpadData.extension_data.turntable.rtt5 = !(rtt & (1 << 5));
-	device->wpadData.extension_data.turntable.rtt40 = rtt;
-	device->wpadData.extension_data.turntable.crossFader = report->cross_fader >> 6;
-	device->wpadData.extension_data.turntable.effectsDial = report->effects_knob >> 5;
+	int8_t ltt = (report->left_turn_table_velocity - 126) >> 2;
+	device->wpadData.extension_data.turntable.ltt_sign = ltt >= 0;
+	device->wpadData.extension_data.turntable.ltt = ltt;
+	int8_t rtt = (report->right_turn_table_velocity - 126) >> 2;
+	device->wpadData.extension_data.turntable.rtt_sign = rtt < 0;
+	device->wpadData.extension_data.turntable.rtt = rtt;
+	device->wpadData.extension_data.turntable.crossFader = __builtin_bswap16(report->cross_fader) >> 6;
+	device->wpadData.extension_data.turntable.effectsDial = __builtin_bswap16(report->effects_knob) >> 5;
 
 	device->wpadData.status = WPAD_STATUS_OK;
 
