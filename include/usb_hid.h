@@ -17,12 +17,18 @@
 #define XINPUT_TYPE_WIRED 1
 #define XINPUT_TYPE_WIRELESS 2
 
+#define API_TYPE_VEN 1
+#define API_TYPE_OH0 2
+#define API_TYPE_HIDV4 3
+#define API_TYPE_HIDV5 4
+
 
 typedef struct usb_device_driver_t usb_device_driver_t;
 typedef struct usb_input_device_t usb_input_device_t;
 
 typedef struct usb_device_driver_t {
 	bool (*probe)(uint16_t vid, uint16_t pid);
+	bool hid;
 	int (*init)(usb_input_device_t *device);
 	int (*disconnect)(usb_input_device_t *device);
 	int (*slot_changed)(usb_input_device_t *device, uint8_t slot);
@@ -48,6 +54,11 @@ struct usb_hid_v5_transfer {
 			uint16_t wLength;
 			uint8_t bEndpoint;
 		} intr;
+
+
+		struct {
+			uint32_t out;
+		} intr_hid;
 
 		uint32_t data[14];
 	};
@@ -96,6 +107,7 @@ typedef struct usb_input_device_t {
 	uint8_t sub_type;
 	uint8_t type;
 	uint8_t state;
+	uint8_t api_type;
     uint8_t wiimote;
 	/* Used to communicate with Wii's USB module */
 	ios_fd_t host_fd;
@@ -121,7 +133,6 @@ typedef struct usb_input_device_t {
 	/* Buffer where we store the USB async respones */
 	uint8_t usb_async_resp[128] IOS_ALIGN;
 	struct usb_hid_v4_transfer transferV4 IOS_ALIGN; 
-	struct usb_hid_v5_transfer transferV5 IOS_ALIGN;
     WPADData_t wpadData;
 	/* Bytes for private data (usage up to the device driver) */
 	uint8_t private_data[USB_INPUT_DEVICE_PRIVATE_DATA_SIZE] __attribute__((aligned(4)));

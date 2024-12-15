@@ -166,6 +166,7 @@ int turntable_driver_ops_usb_async_resp(usb_input_device_t *device)
 
 const usb_device_driver_t turntable_usb_device_driver = {
 	.probe		= turntable_driver_ops_probe,
+    .hid = true,
 	.init		= turntable_driver_ops_init,
 	.disconnect	= turntable_driver_ops_disconnect,
 	.slot_changed	= turntable_driver_ops_slot_changed,

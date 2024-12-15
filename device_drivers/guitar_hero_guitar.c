@@ -155,6 +155,7 @@ int gh_guitar_driver_ops_usb_async_resp(usb_input_device_t *device) {
 
 const usb_device_driver_t gh_guitar_usb_device_driver = {
     .probe = gh_guitar_driver_ops_probe,
+    .hid = true,
     .init = gh_guitar_driver_ops_init,
     .disconnect = gh_guitar_driver_ops_disconnect,
     .slot_changed = gh_guitar_driver_ops_slot_changed,

@@ -58,6 +58,7 @@ int santroller_driver_ops_usb_async_resp(usb_input_device_t *device)
 
 const usb_device_driver_t santroller_usb_device_driver = {
 	.probe		= santroller_driver_ops_probe,
+    .hid = true,
 	.init		= santroller_driver_ops_init,
 	.disconnect	= santroller_driver_ops_disconnect,
 	.slot_changed	= santroller_driver_ops_slot_changed,

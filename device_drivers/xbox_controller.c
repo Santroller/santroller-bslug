@@ -543,6 +543,7 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
 
 const usb_device_driver_t xbox_controller_usb_device_driver = {
     .probe = xbox_controller_driver_ops_probe,
+    .hid = false,
     .init = xbox_controller_driver_ops_init,
     .disconnect = xbox_controller_driver_ops_disconnect,
     .slot_changed = xbox_controller_driver_ops_slot_changed,
