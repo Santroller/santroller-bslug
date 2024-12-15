@@ -438,8 +438,10 @@ bool xbox_controller_report_gamepad_input(const XInputGamepad_Data_t *report, us
     device->wpadData.extension_data.classic.b = report->b;
     device->wpadData.extension_data.classic.x = report->x;
     device->wpadData.extension_data.classic.y = report->y;
-    device->wpadData.extension_data.classic.lt = report->leftShoulder;
-    device->wpadData.extension_data.classic.rt = report->rightShoulder;
+    device->wpadData.extension_data.classic.zl = report->leftShoulder;
+    device->wpadData.extension_data.classic.zr = report->rightShoulder;
+    device->wpadData.extension_data.classic.lt = report->leftTrigger > 0x80;
+    device->wpadData.extension_data.classic.rt = report->rightTrigger > 0x80;
     device->wpadData.extension_data.classic.plus = report->start;
     device->wpadData.extension_data.classic.minus = report->back;
     device->wpadData.extension_data.classic.home = report->guide;

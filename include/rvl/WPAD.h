@@ -81,22 +81,23 @@ struct WPADData_t  {
     union {
         uint16_t buttons;
         struct {
-            uint16_t dpadLeft : 1;
-            uint16_t dpadRight : 1;
-            uint16_t dpadDown : 1;
-            uint16_t dpadUp : 1;
-            uint16_t plus : 1;
-            uint16_t : 1;
-            uint16_t : 1;
-            uint16_t : 1;
-            uint16_t two : 1;
-            uint16_t one : 1;
-            uint16_t b : 1;
-            uint16_t a : 1;
-            uint16_t minus : 1;
-            uint16_t : 1;
-            uint16_t : 1;
             uint16_t home : 1;
+            uint16_t : 1;
+            uint16_t : 1;
+            uint16_t minus : 1;
+            uint16_t a : 1;
+            uint16_t b : 1;
+            uint16_t one : 1;
+            uint16_t two : 1;
+
+            uint16_t : 1;
+            uint16_t : 1;
+            uint16_t : 1;
+            uint16_t plus : 1;
+            uint16_t dpadUp : 1;
+            uint16_t dpadDown : 1;
+            uint16_t dpadRight : 1;
+            uint16_t dpadLeft : 1;
         };
     };
     int16_t acceleration[3];  // x, y, z

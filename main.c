@@ -128,7 +128,8 @@ static const usb_device_driver_t *usb_device_drivers[] = {
     &gh_drum_usb_device_driver,
     &turntable_usb_device_driver,
     &santroller_usb_device_driver,
-    &xbox_controller_usb_device_driver};
+    &xbox_controller_usb_device_driver,
+    &ds3_usb_device_driver};
 
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 
@@ -705,11 +706,11 @@ static inline void build_v4_intr_transfer(struct usb_hid_v4_transfer *transfer, 
 
 static inline int usb_hid_v4_ctrl_transfer_async(usb_input_device_t *device, uint8_t bmRequestType,
                                                  uint8_t bmRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength,
-                                                 void *rpData) {
+                                                 void *rpData, void (*callback)(int, void *)) {
     build_v4_ctrl_transfer(&device->transferV4, device->dev_id, bmRequestType, bmRequest, wValue, wIndex, wLength, rpData);
 
     return IOS_IoctlAsync(device->host_fd, DEV_USB_HID4_IOCTL_CONTROL, &device->transferV4, sizeof(device->transferV4), NULL, 0,
-                          onDevUsbPoll, device);
+                          callback, device);
 }
 
 static inline int usb_hid_v4_intr_transfer_async(usb_input_device_t *device, bool out, uint16_t length, void *rpData) {
@@ -737,7 +738,8 @@ static inline int usb_hid_v4_intr_transfer(usb_input_device_t *device, bool out,
 static inline int usb_hid_v4_ctrl_transfer(usb_input_device_t *device, uint8_t bmRequestType, uint8_t bmRequest,
                                            uint16_t wValue, uint16_t wIndex, uint16_t wLength, void *rpData) {
     build_v4_ctrl_transfer(&device->transferV4, device->dev_id, bmRequestType, bmRequest, wValue, wIndex, wLength, rpData);
-    return IOS_Ioctl(device->host_fd, DEV_USB_HID4_IOCTL_CONTROL, &device->transferV4, sizeof(device->transferV4), NULL, 0);
+    int ret = IOS_Ioctl(device->host_fd, DEV_USB_HID4_IOCTL_CONTROL, &device->transferV4, sizeof(device->transferV4), NULL, 0);
+    return ret;
 }
 
 static int checkVersion5(ios_cb_t cb, usr_t data) {
@@ -1087,7 +1089,7 @@ static void onDevUsbChange4(ios_ret_t ret, usr_t unused) {
             vid_pid = dev_usb_hid4_devices[i + 4];
             vid = (vid_pid >> 16) & 0xFFFF;
             pid = vid_pid & 0xFFFF;
-            printf("       Found device v4 %04x!\r\n", vid_pid);
+            printf("       Found device v4 %04x %04x!\r\n", vid_pid, device_id);
             driver = NULL;
             for (int i = 0; i < ARRAY_SIZE(usb_device_drivers); i++) {
                 if (usb_device_drivers[i]->probe(vid, pid)) {
@@ -1598,7 +1600,7 @@ int usb_device_driver_issue_ctrl_transfer_async(usb_input_device_t *device, uint
 #endif
 #ifdef SUPPORT_DEV_USB_HID4
     if (device->api_type == API_TYPE_HIDV4) {
-        return usb_hid_v4_ctrl_transfer_async(device, requesttype, request, value, index, length, data);
+        return usb_hid_v4_ctrl_transfer_async(device, requesttype, request, value, index, length, data, onDevUsbPoll);
     }
     if (device->api_type == API_TYPE_OH0) {
         return usb_oh0_ctrl_transfer_async(device, requesttype, request, value, index, length, data, onDevUsbPoll);

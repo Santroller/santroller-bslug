@@ -153,6 +153,9 @@ extern const usb_device_driver_t gh_drum_usb_device_driver;
 extern const usb_device_driver_t turntable_usb_device_driver;
 extern const usb_device_driver_t santroller_usb_device_driver;
 extern const usb_device_driver_t xbox_controller_usb_device_driver;
+extern const usb_device_driver_t ds3_usb_device_driver;
+extern const usb_device_driver_t ds4_usb_device_driver;
+
 
 
 /* Used by USB device drivers */
