@@ -116,7 +116,7 @@ struct ds4_private_data_t {
 
 static inline int ds4_request_data(usb_input_device_t *device) {
     return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp,
-                                                       sizeof(struct ds4_input_report));
+                                                       64);
 }
 
 bool ds4_driver_ops_probe(uint16_t vid, uint16_t pid) {
@@ -128,7 +128,48 @@ bool ds4_driver_ops_probe(uint16_t vid, uint16_t pid) {
 }
 
 
+static inline int ds4_set_leds_rumble(usb_input_device_t *device, uint8_t r, uint8_t g, uint8_t b,
+				      uint8_t rumble_small, uint8_t rumble_large)
+{
+	uint8_t buf[] ATTRIBUTE_ALIGN(32) = {
+		0x05, // Report ID
+		0x03, 0x00, 0x00,
+		rumble_small, // Fast motor
+		rumble_large, // Slow motor
+		r, g, b, // RGB
+		0x00, // LED on duration
+		0x00  // LED off duration
+	};
+
+	return usb_device_driver_issue_intr_transfer_async(device, 1, buf, sizeof(buf));
+}
+
+static int ds4_driver_update_leds_rumble(usb_input_device_t *device)
+{
+	uint8_t index;
+
+	static const uint8_t colors[5][3] = {
+		{  0,   0,   0},
+		{  0,   0,  32},
+		{ 32,   0,   0},
+		{  0,  32,   0},
+		{ 32,   0,  32},
+	};
+
+	index = (device->wiimote+1) % ARRAY_SIZE(colors);
+
+	uint8_t r = colors[index][0],
+	   g = colors[index][1],
+	   b = colors[index][2];
+
+	return ds4_set_leds_rumble(device, r, g, b, device->rumble_on * 192, 0);
+}
+
 int ds4_driver_ops_init(usb_input_device_t *device) {
+    // DS3 to gh3 wiimote mappings
+    // device->extension = WPAD_EXTENSION_NONE;
+    // device->wpadData.extension = WPAD_EXTENSION_NONE;
+    // device->format = WPAD_FORMAT_NONE;
     device->extension = WPAD_EXTENSION_CLASSIC;
     device->wpadData.extension = WPAD_EXTENSION_CLASSIC;
     device->format = WPAD_FORMAT_CLASSIC;
@@ -137,7 +178,7 @@ int ds4_driver_ops_init(usb_input_device_t *device) {
     device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
 
-    return ds4_request_data(device);
+    return ds4_driver_update_leds_rumble(device);
 }
 
 static int ds4_driver_update_leds(usb_input_device_t *device) {
@@ -162,6 +203,18 @@ int ds4_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) {
 }
 
 bool ds4_report_input(const struct ds4_input_report *report, usb_input_device_t *device) {
+    // DS3 to GH3 wiimote mappings
+    // device->wpadData.buttons = 0;
+    // device->wpadData.home = report->ps;
+    // device->wpadData.b = report->l2;
+    // device->wpadData.dpadRight = report->l1;
+    // device->wpadData.a = report->r1;
+    // device->wpadData.one = report->r2;
+    // device->wpadData.two = report->cross;
+    // device->wpadData.dpadDown = report->dpad == 3 || report->dpad == 4 || report->dpad == 5;
+    // device->wpadData.dpadUp = report->dpad == 0 || report->dpad == 1 || report->dpad == 7;
+    // device->wpadData.plus = report->options;
+    // device->wpadData.minus = report->share;
     device->wpadData.buttons = 0;
     device->wpadData.extension_data.classic.a = report->cross;
     device->wpadData.extension_data.classic.b = report->circle;
@@ -190,6 +243,11 @@ bool ds4_report_input(const struct ds4_input_report *report, usb_input_device_t 
 int ds4_driver_ops_usb_async_resp(usb_input_device_t *device) {
     struct ds4_input_report *report = (void *)device->usb_async_resp;
     ds4_report_input(report, device);
+
+    if (device->last_rumble_on != device->rumble_on) {
+        device->last_rumble_on = device->rumble_on;
+        return ds4_driver_update_leds_rumble(device);
+    }
     return ds4_request_data(device);
 }
 

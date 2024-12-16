@@ -113,6 +113,9 @@ typedef struct usb_input_device_t {
 	ios_fd_t host_fd;
     bool dpdEnabled;
 	bool waiting;
+	int led_state;
+	bool last_rumble_on;
+	bool rumble_on;
 	uint32_t dev_id;
 	uint16_t number;
     WPADDataFormat_t format;

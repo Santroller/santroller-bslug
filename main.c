@@ -29,7 +29,6 @@
  * and then where USBv5 is supported, we use /dev/usb/ven and /dev/usb/hid.
  */
 
-// TODO: reimplement HIDv5, the actual wii does NOT let you use hid devices over /dev/usb/ven
 
 #include <bslug.h>
 #include <rvl/OSTime.h>
@@ -49,7 +48,7 @@
 
 BSLUG_MODULE_GAME("????");
 BSLUG_MODULE_NAME("Guitar Hero USB Instrument Support");
-BSLUG_MODULE_VERSION("v1.7");
+BSLUG_MODULE_VERSION("v1.8");
 BSLUG_MODULE_AUTHOR("sanjay900");
 BSLUG_MODULE_LICENSE("BSD");
 
@@ -129,7 +128,8 @@ static const usb_device_driver_t *usb_device_drivers[] = {
     &turntable_usb_device_driver,
     &santroller_usb_device_driver,
     &xbox_controller_usb_device_driver,
-    &ds3_usb_device_driver};
+    &ds3_usb_device_driver,
+    &ds4_usb_device_driver};
 
 static usb_input_device_t fake_devices[MAX_FAKE_WIIMOTES];
 
@@ -293,6 +293,7 @@ static void MyWPADControlMotor(int wiimote, int cmd) {
         WPADControlMotor(wiimote, cmd);
         return;
     }
+    fake_devices[wiimote].rumble_on = cmd;
     // GH games pulse rumble when star power is ready or active
     printf("motor! %d %d\r\n", wiimote, cmd);
 }
