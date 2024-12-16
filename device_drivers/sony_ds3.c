@@ -176,14 +176,6 @@ int ds3_driver_ops_disconnect(usb_input_device_t *device) {
     return ds3_driver_update_leds(device);
 }
 
-int ds3_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) {
-    struct ds3_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = slot;
-
-    return ds3_driver_update_leds(device);
-}
-
 bool ds3_report_input(const struct ds3_input_report *report, usb_input_device_t *device) {
     // DS3 to GH3 wiimote mappings
     // device->wpadData.buttons = 0;
@@ -242,6 +234,5 @@ const usb_device_driver_t ds3_usb_device_driver = {
     .hid = true,
     .init = ds3_driver_ops_init,
     .disconnect = ds3_driver_ops_disconnect,
-    .slot_changed = ds3_driver_ops_slot_changed,
     .usb_async_resp = ds3_driver_ops_usb_async_resp,
 };

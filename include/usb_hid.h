@@ -31,7 +31,6 @@ typedef struct usb_device_driver_t {
 	bool hid;
 	int (*init)(usb_input_device_t *device);
 	int (*disconnect)(usb_input_device_t *device);
-	int (*slot_changed)(usb_input_device_t *device, uint8_t slot);
 	int (*set_rumble)(usb_input_device_t *device, bool rumble_on);
 	int (*usb_async_resp)(usb_input_device_t *device);
 } usb_device_driver_t;
@@ -116,6 +115,8 @@ typedef struct usb_input_device_t {
 	int led_state;
 	bool last_rumble_on;
 	bool rumble_on;
+	bool last_euphoria_led;
+	bool euphoria_led;
 	uint32_t dev_id;
 	uint16_t number;
     WPADDataFormat_t format;
@@ -168,3 +169,4 @@ int usb_device_driver_issue_intr_transfer_async(usb_input_device_t *device, bool
 int usb_device_driver_issue_ctrl_transfer(usb_input_device_t *device, uint8_t requesttype,
 						uint8_t request, uint16_t value, uint16_t index, void *data, uint16_t length);
 int usb_device_driver_issue_intr_transfer(usb_input_device_t *device, bool out, void *data, uint16_t length);
+int ps3_set_leds(usb_input_device_t *device);

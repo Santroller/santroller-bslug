@@ -301,6 +301,7 @@ static void MyWPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeriphera
     WPADWriteExtReg(wiimote, buffer, size, space, address, callback);
     // DJH writes to this address to turn the euphoria led on and off
     if (address == 0xFB && size == 1 && fake_devices[wiimote].valid) {
+        fake_devices[wiimote].euphoria_led = ((uint8_t *)buffer)[0];
         printf("DJH Euphoria LED: %d %d\r\n", wiimote, ((uint8_t *)buffer)[0]);
     }
 }
@@ -927,7 +928,7 @@ static void onDevOpenUsbv0(ios_fd_t fd, usr_t usr) {
     const usb_device_driver_t *driver = &xbox_controller_usb_device_driver;
     device->host_fd = fd;
     device->driver = driver;
-    device->valid = true;
+    device->api_type = API_TYPE_OH0;
     usb_oh0_ctrl_transfer_async(device, 0b10000000, 0x06, USB_DT_CONFIG << 8, 0, 4, dev_oh0_buffer, onDevGetDesc1);
 }
 /*============================================================================*/

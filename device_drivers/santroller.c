@@ -39,11 +39,6 @@ int santroller_driver_ops_disconnect(usb_input_device_t *device)
 	return santroller_driver_update_leds(device);
 }
 
-int santroller_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot)
-{
-	return santroller_driver_update_leds(device);
-}
-
 bool santroller_report_input(usb_input_device_t *device)
 {
 	return true;
@@ -61,6 +56,5 @@ const usb_device_driver_t santroller_usb_device_driver = {
     .hid = true,
 	.init		= santroller_driver_ops_init,
 	.disconnect	= santroller_driver_ops_disconnect,
-	.slot_changed	= santroller_driver_ops_slot_changed,
 	.usb_async_resp	= santroller_driver_ops_usb_async_resp,
 };

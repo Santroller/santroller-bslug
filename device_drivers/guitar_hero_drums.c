@@ -60,7 +60,7 @@ int gh_drum_driver_ops_init(usb_input_device_t *device) {
     device->wpadData.extension = WPAD_EXTENSION_DRUM;
     device->format = WPAD_FORMAT_DRUM;
 
-    ret = gh_drum_request_data(device);
+    ret = ps3_set_leds(device);
     if (ret < 0)
         return ret;
 
@@ -71,14 +71,6 @@ int gh_drum_driver_ops_disconnect(usb_input_device_t *device) {
     struct gh_drum_private_data_t *priv = (void *)device->private_data;
 
     priv->leds = 0;
-
-    return gh_drum_driver_update_leds(device);
-}
-
-int gh_drum_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) {
-    struct gh_drum_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = slot;
 
     return gh_drum_driver_update_leds(device);
 }
@@ -136,6 +128,5 @@ const usb_device_driver_t gh_drum_usb_device_driver = {
     .hid = true,
     .init = gh_drum_driver_ops_init,
     .disconnect = gh_drum_driver_ops_disconnect,
-    .slot_changed = gh_drum_driver_ops_slot_changed,
     .usb_async_resp = gh_drum_driver_ops_usb_async_resp,
 };

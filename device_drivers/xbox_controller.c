@@ -251,7 +251,39 @@ bool xbox_controller_driver_ops_probe(uint16_t vid, uint16_t pid) {
     return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
 }
 
+static int xbox_controller_driver_set_rumble(usb_input_device_t *device, uint8_t left, uint8_t right) {
+    if (device->type == XINPUT_TYPE_WIRED) {
+        static uint8_t buf[] ATTRIBUTE_ALIGN(32) = {
+            0x00, /* Type */
+            0x08, /* Size */
+            0x00, /* Padding */
+            0x00, /* Left */
+            0x00, /* Right */
+            0x00, 0x00, 0x00 /* Padding */};
+
+        buf[3] = left;
+        buf[4] = right;
+        return usb_device_driver_issue_intr_transfer_async(device, true, buf, sizeof(buf));
+    } else {
+        static uint8_t buf[] ATTRIBUTE_ALIGN(32) = {
+            0x00,
+            0x01,
+            0x0f,
+            0xc0,
+            0x00,
+            0x00, /* Left */
+            0x00 /* Right */};
+
+        buf[5] = left;
+        buf[6] = right;
+        return usb_device_driver_issue_intr_transfer_async(device, true, buf, sizeof(buf));
+    }
+}
+
 static uint8_t disconnect[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0xC0};
+static uint8_t led[12] IOS_ALIGN = {0x00, 0x00, 0x08, 0x41};
+static uint8_t led_wired[3] IOS_ALIGN = {0x01, 0x03, 0x00};
+static uint8_t capabilities[12] IOS_ALIGN = {0x00, 0x00, 0x02, 0x80};
 
 int xbox_controller_driver_ops_init(usb_input_device_t *device) {
     int ret;
@@ -260,7 +292,8 @@ int xbox_controller_driver_ops_init(usb_input_device_t *device) {
         // We don't receive a link packet for devices that are already connected, so disconnect all of them
         device->state = 0;
 
-        ret = xbox_controller_request_data(device);
+        ret = usb_device_driver_issue_intr_transfer_async(device, true, led, sizeof(led));
+        ;
         if (ret < 0)
             return ret;
 
@@ -278,17 +311,14 @@ int xbox_controller_driver_ops_init(usb_input_device_t *device) {
         df = WPAD_FORMAT_TURNTABLE;
     }
 
-    if (device->extensionCallback) {
-        device->extensionCallback(device->wiimote, ext);
-    }
     device->extension = ext;
     device->wpadData.extension = ext;
     device->format = df;
     device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
-
-    ret = xbox_controller_request_data(device);
+    led_wired[2] = device->wiimote + 2;
+    ret = usb_device_driver_issue_intr_transfer_async(device, true, led_wired, sizeof(led_wired));
     if (ret < 0)
         return ret;
 
@@ -308,13 +338,6 @@ int xbox_controller_driver_ops_disconnect(usb_input_device_t *device) {
     return xbox_controller_driver_update_leds(device);
 }
 
-int xbox_controller_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) {
-    struct xbox_controller_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = slot;
-
-    return xbox_controller_driver_update_leds(device);
-}
 bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report, usb_input_device_t *device) {
     device->wpadData.buttons = 0;
     device->wpadData.home = report->guide;
@@ -345,10 +368,10 @@ bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report
     }
     device->wpadData.status = WPAD_STATUS_OK;
     int8_t ltt = ((int16_t)__builtin_bswap16(report->leftTableVelocity)) >> 1;
-	device->wpadData.extension_data.turntable.ltt_sign = ltt >= 0;
+    device->wpadData.extension_data.turntable.ltt_sign = ltt >= 0;
     device->wpadData.extension_data.turntable.ltt = ltt;
     int8_t rtt = ((int16_t)__builtin_bswap16(report->rightTableVelocity)) >> 1;
-	device->wpadData.extension_data.turntable.rtt_sign = rtt < 0;
+    device->wpadData.extension_data.turntable.rtt_sign = rtt < 0;
     device->wpadData.extension_data.turntable.rtt = rtt;
     device->wpadData.extension_data.turntable.crossFader = (__builtin_bswap16(report->crossfader) + INT16_MAX) >> 12;
     device->wpadData.extension_data.turntable.effectsDial = (__builtin_bswap16(report->effectsKnob) + INT16_MAX) >> 11;
@@ -482,12 +505,11 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                     xboxwirelesslinkreport *linkReport = (xboxwirelesslinkreport *)device->usb_async_resp;
                     if (linkReport->always_0xCC == 0xCC) {
                         uint8_t sub_type = linkReport->subtype & ~0x80;
-                        device->sub_type = sub_type;
                         printf("Found wireless subtype: %02x\r\n", sub_type);
                         // Request capabilities so we can figure out WT guitars
                         if (sub_type == XINPUT_GUITAR_ALTERNATE) {
-                            // Can't do this here, maybe for now we just don't bother
-                            // usb_device_driver_issue_intr_transfer(device, true, capabilitiesRequest, sizeof(capabilitiesRequest));
+                            // this should work?
+                            return usb_device_driver_issue_intr_transfer_async(device, true, capabilities, sizeof(capabilities));
                         }
 
                         uint8_t ext = WPAD_EXTENSION_CLASSIC;
@@ -510,6 +532,12 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                         device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
                         device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
                         device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
+                        if (device->sub_type == 0) {
+                            device->sub_type = sub_type;
+                            led[3] = (device->wiimote + 2) | 0x40;
+                            return usb_device_driver_issue_intr_transfer_async(device, true, led, sizeof(led));
+                        }
+                        device->sub_type = sub_type;
                     }
                 }
                 if (header->type == 0x05) {
@@ -523,6 +551,16 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                     }
                 }
             }
+        }
+    }
+    if (device->sub_type == XINPUT_GAMEPAD) {
+        if (device->rumble_on != device->last_rumble_on) {
+            return xbox_controller_driver_set_rumble(device, device->rumble_on * 255, device->rumble_on * 255);
+        }
+    }
+    if (device->type == XINPUT_TURNTABLE) {
+        if (device->euphoria_led != device->last_euphoria_led) {
+            return xbox_controller_driver_set_rumble(device, device->euphoria_led * 255, device->rumble_on * 255);
         }
     }
     if (device->state == 0) {
@@ -548,6 +586,5 @@ const usb_device_driver_t xbox_controller_usb_device_driver = {
     .hid = false,
     .init = xbox_controller_driver_ops_init,
     .disconnect = xbox_controller_driver_ops_disconnect,
-    .slot_changed = xbox_controller_driver_ops_slot_changed,
     .usb_async_resp = xbox_controller_driver_ops_usb_async_resp,
 };

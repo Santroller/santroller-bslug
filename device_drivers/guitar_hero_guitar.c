@@ -67,7 +67,7 @@ int gh_guitar_driver_ops_init(usb_input_device_t *device) {
     device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[1] = ACCEL_ONE_G;
     device->gravityUnit[0].acceleration[2] = ACCEL_ONE_G;
-    ret = gh_guitar_request_data(device);
+    ret = ps3_set_leds(device);
     if (ret < 0)
         return ret;
 
@@ -83,14 +83,6 @@ int gh_guitar_driver_ops_disconnect(usb_input_device_t *device) {
     struct gh_guitar_private_data_t *priv = (void *)device->private_data;
 
     priv->leds = 0;
-
-    return gh_guitar_driver_update_leds(device);
-}
-
-int gh_guitar_driver_ops_slot_changed(usb_input_device_t *device, uint8_t slot) {
-    struct gh_guitar_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = slot;
 
     return gh_guitar_driver_update_leds(device);
 }
@@ -158,6 +150,5 @@ const usb_device_driver_t gh_guitar_usb_device_driver = {
     .hid = true,
     .init = gh_guitar_driver_ops_init,
     .disconnect = gh_guitar_driver_ops_disconnect,
-    .slot_changed = gh_guitar_driver_ops_slot_changed,
     .usb_async_resp = gh_guitar_driver_ops_usb_async_resp,
 };
