@@ -6,7 +6,6 @@
 #include "usb_hid.h"
 #include "wiimote.h"
 int ps3_set_leds(usb_input_device_t *device) {
-    printf("Set leds! %d\r\n", device->wiimote);
     static uint8_t buf[] ATTRIBUTE_ALIGN(32) = {
         0x01, /* outputType */
         0x08, /* data len? */

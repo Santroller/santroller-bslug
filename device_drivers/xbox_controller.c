@@ -496,7 +496,7 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
             if (header->id == 0x08) {
                 // Disconnected
                 if (header->type == 0x00) {
-                    printf("Xbox 360 wireless device disconnected!\r\n");
+                    printf_v("Xbox 360 wireless device disconnected!\r\n");
                     device->sub_type = 0;
                 }
             } else if (header->id == 0x00) {
@@ -505,7 +505,7 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                     xboxwirelesslinkreport *linkReport = (xboxwirelesslinkreport *)device->usb_async_resp;
                     if (linkReport->always_0xCC == 0xCC) {
                         uint8_t sub_type = linkReport->subtype & ~0x80;
-                        printf("Found wireless subtype: %02x\r\n", sub_type);
+                        printf_v("Found wireless subtype: %02x\r\n", sub_type);
                         // Request capabilities so we can figure out WT guitars
                         if (sub_type == XINPUT_GUITAR_ALTERNATE) {
                             // this should work?
@@ -526,7 +526,7 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                         device->wpadData.extension = ext;
                         device->format = df;
                         if (device->extensionCallback) {
-                            printf("ext callback! %02x\r\n", device->wiimote);
+                            printf_v("ext callback! %02x\r\n", device->wiimote);
                             device->extensionCallback(device->wiimote, device->extension);
                         }
                         device->gravityUnit[0].acceleration[0] = ACCEL_ONE_G;
@@ -543,10 +543,10 @@ int xbox_controller_driver_ops_usb_async_resp(usb_input_device_t *device) {
                 if (header->type == 0x05) {
                     xboxwirelesscapabilities *caps = (xboxwirelesscapabilities *)device->usb_async_resp;
                     if (caps->always_0x12 == 0x12) {
-                        printf("Found wireless capabilities: %04x\r\n", caps->leftStickX);
+                        printf_v("Found wireless capabilities: %04x\r\n", caps->leftStickX);
                         if (caps->leftStickX == 0xFFC0 && caps->rightStickX == 0xFFC0) {
                             device->sub_type = XINPUT_GUITAR_WT;
-                            printf("Found wt\r\n");
+                            printf_v("Found wt\r\n");
                         }
                     }
                 }

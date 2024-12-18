@@ -41,6 +41,7 @@
         "list": "c",
         "queue": "c",
         "stack": "c",
-        "any": "c"
+        "any": "c",
+        "usb.h": "c"
     }
 }

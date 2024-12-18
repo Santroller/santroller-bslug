@@ -77,7 +77,7 @@ void WPADWriteExtReg(int wiimote, void *buffer, int size, WPADPeripheralSpace_t 
 int WPADGetInfoAsync(int wiimote, WPADInfo_t *info, WPADInfoCallback_t callback);
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format);
 
-struct WPADData_t  {
+struct WPADData_t {
     union {
         uint16_t buttons;
         struct {
@@ -239,6 +239,19 @@ struct WPADData_t  {
             uint8_t ltt : 5;
             uint8_t : 3;
         } turntable;
+        struct {
+            union {
+                uint16_t buttons;
+                struct {
+                    uint16_t : 9;
+                    uint16_t centerLeft : 1;
+                    uint16_t rimLeft : 1;
+                    uint16_t centerRight : 1;
+                    uint16_t rimRight : 1;
+                    uint16_t : 3;
+                };
+            };
+        } taiko;
         uint8_t unknown[0x30];
     } extension_data;
 } __attribute__((packed));
