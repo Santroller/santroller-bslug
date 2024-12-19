@@ -27,16 +27,9 @@ int santroller_driver_ops_init(usb_input_device_t *device)
 							   0x11);
 	return -1;
 }
-
-static int santroller_driver_update_leds(usb_input_device_t *device)
-{
-	// TODO: this
-	return 0;
-}
-
 int santroller_driver_ops_disconnect(usb_input_device_t *device)
 {
-	return santroller_driver_update_leds(device);
+	return 0;
 }
 
 bool santroller_report_input(usb_input_device_t *device)

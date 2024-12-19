@@ -1,6 +1,6 @@
 #pragma once
+#include <stddef.h>
 #define IOS_ALIGN __attribute__((aligned(32)))
-#define USB_INPUT_DEVICE_PRIVATE_DATA_SIZE 64
 #ifndef ATTRIBUTE_ALIGN
 # define ATTRIBUTE_ALIGN(v)	__attribute__((aligned(v)))
 #endif

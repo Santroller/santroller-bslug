@@ -150,7 +150,7 @@ void printf_v(const char *format, ...) {
     va_end(args);
 }
 
-// Some wii games don't include snprintf, so we just call vprintf instead
+// Some wii games don't include snprintf, so we just call vsnprintf instead
 void snprintf_v(char *dest, size_t len, const char *format, ...) {
     va_list args;
     va_start(args, format);

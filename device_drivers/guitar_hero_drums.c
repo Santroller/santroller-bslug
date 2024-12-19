@@ -32,19 +32,9 @@ struct drum_input_report {
     uint16_t unused4[4];
 
 } __attribute__((packed));
-
-struct gh_drum_private_data_t {
-    uint8_t leds;
-};
-
 static inline int gh_drum_request_data(usb_input_device_t *device) {
     return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp,
                                                        device->max_packet_len_in);
-}
-
-static int gh_drum_driver_update_leds(usb_input_device_t *device) {
-    // TODO: this
-    return 0;
 }
 
 bool gh_drum_driver_ops_probe(uint16_t vid, uint16_t pid) {
@@ -68,11 +58,7 @@ int gh_drum_driver_ops_init(usb_input_device_t *device) {
 }
 
 int gh_drum_driver_ops_disconnect(usb_input_device_t *device) {
-    struct gh_drum_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = 0;
-
-    return gh_drum_driver_update_leds(device);
+    return 0;
 }
 
 bool gh_drum_report_input(const struct drum_input_report *report, usb_input_device_t *device) {

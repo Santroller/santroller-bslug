@@ -4,15 +4,20 @@
 #include <rvl/ipc.h>
 
 /* List of Vendor IDs */
-#define SONY_VID			0x054c
-#define SONY_INST_VID		0x12ba
-#define SANTROLLER_VID		0x1209
+#define SONY_VID				0x054c
+#define SONY_INST_VID			0x12ba
+#define SANTROLLER_VID			0x1209
+#define HORI_VID				0x0f0d
 
 /* List of Product IDs */
-#define GH_GUITAR_PID		0x0100
-#define GH_DRUM_PID			0x0120
-#define DJ_TURNTABLE_PID	0x0140
-#define SANTROLLER_PID		0x2882
+#define GH_GUITAR_PID			0x0100
+#define GH_DRUM_PID				0x0120
+#define DJ_TURNTABLE_PID		0x0140
+#define SANTROLLER_PID			0x2882
+#define HORI_SWITCH_TAIKO_PID	0x00f0
+#define DS3_PID					0x0268
+#define DS4_PID_1				0x05c4
+#define DS4_PID_2				0x09cc
 
 #define XINPUT_TYPE_WIRED 1
 #define XINPUT_TYPE_WIRELESS 2
@@ -31,7 +36,6 @@ typedef struct usb_device_driver_t {
 	bool hid;
 	int (*init)(usb_input_device_t *device);
 	int (*disconnect)(usb_input_device_t *device);
-	int (*set_rumble)(usb_input_device_t *device, bool rumble_on);
 	int (*usb_async_resp)(usb_input_device_t *device);
 } usb_device_driver_t;
 
@@ -138,8 +142,6 @@ typedef struct usb_input_device_t {
 	uint8_t usb_async_resp[128] IOS_ALIGN;
 	struct usb_hid_v4_transfer transferV4 IOS_ALIGN; 
     WPADData_t wpadData;
-	/* Bytes for private data (usage up to the device driver) */
-	uint8_t private_data[USB_INPUT_DEVICE_PRIVATE_DATA_SIZE] __attribute__((aligned(4)));
 } usb_input_device_t;
 
 static inline bool usb_driver_is_comaptible(uint16_t vid, uint16_t pid, const struct device_id_t *ids, int num)

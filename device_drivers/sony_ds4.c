@@ -104,15 +104,6 @@ enum bm_ir_axis_e {
 struct bm_ir_emulation_state_t {
     uint16_t position[BM_IR_AXIS__NUM];
 };
-struct ds4_private_data_t {
-    enum bm_ir_emulation_mode_e ir_emu_mode;
-    uint8_t mapping;
-    uint8_t ir_emu_mode_idx;
-    uint8_t leds;
-    bool rumble_on;
-    bool switch_mapping;
-    bool switch_ir_emu_mode;
-};
 
 static inline int ds4_request_data(usb_input_device_t *device) {
     return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp,
@@ -121,8 +112,8 @@ static inline int ds4_request_data(usb_input_device_t *device) {
 
 bool ds4_driver_ops_probe(uint16_t vid, uint16_t pid) {
     static const struct device_id_t compatible[] = {
-        {SONY_VID, 0x05c4},
-        {SONY_VID, 0x09cc}};
+        {SONY_VID, DS4_PID_1},
+        {SONY_VID, DS4_PID_2}};
 
     return usb_driver_is_comaptible(vid, pid, compatible, ARRAY_SIZE(compatible));
 }
@@ -180,18 +171,8 @@ int ds4_driver_ops_init(usb_input_device_t *device) {
 
     return ds4_driver_update_leds_rumble(device);
 }
-
-static int ds4_driver_update_leds(usb_input_device_t *device) {
-    // TODO: this
-    return 0;
-}
-
 int ds4_driver_ops_disconnect(usb_input_device_t *device) {
-    struct ds4_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = 0;
-
-    return ds4_driver_update_leds(device);
+    return 0;
 }
 
 bool ds4_report_input(const struct ds4_input_report *report, usb_input_device_t *device) {

@@ -236,10 +236,6 @@ typedef struct
     uint8_t reserved_1[6];
 } __attribute__((packed)) XInputTurntable_Data_t;
 
-struct xbox_controller_private_data_t {
-    uint8_t leds;
-};
-
 static inline int xbox_controller_request_data(usb_input_device_t *device) {
     return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp, device->max_packet_len_in);
 }
@@ -324,18 +320,8 @@ int xbox_controller_driver_ops_init(usb_input_device_t *device) {
 
     return 0;
 }
-
-static int xbox_controller_driver_update_leds(usb_input_device_t *device) {
-    // TODO: this
-    return 0;
-}
-
 int xbox_controller_driver_ops_disconnect(usb_input_device_t *device) {
-    struct xbox_controller_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = 0;
-
-    return xbox_controller_driver_update_leds(device);
+    return 0;
 }
 
 bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report, usb_input_device_t *device) {

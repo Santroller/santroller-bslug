@@ -42,10 +42,6 @@ struct guitar_input_report {
 
 } __attribute__((packed));
 
-struct gh_guitar_private_data_t {
-    uint8_t leds;
-};
-
 static inline int gh_guitar_request_data(usb_input_device_t *device) {
     return usb_device_driver_issue_intr_transfer_async(device, false, device->usb_async_resp,
                                                        sizeof(struct guitar_input_report));
@@ -74,17 +70,8 @@ int gh_guitar_driver_ops_init(usb_input_device_t *device) {
     return 0;
 }
 
-static int gh_guitar_driver_update_leds(usb_input_device_t *device) {
-    // TODO: this
-    return 0;
-}
-
 int gh_guitar_driver_ops_disconnect(usb_input_device_t *device) {
-    struct gh_guitar_private_data_t *priv = (void *)device->private_data;
-
-    priv->leds = 0;
-
-    return gh_guitar_driver_update_leds(device);
+    return 0;
 }
 
 bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_device_t *device) {

@@ -49,11 +49,6 @@ static inline int turntable_request_data(usb_input_device_t *device) {
                                                        sizeof(struct turntable_input_report));
 }
 
-static int turntable_driver_update_leds(usb_input_device_t *device) {
-    // TODO: this
-    return 0;
-}
-
 bool turntable_driver_ops_probe(uint16_t vid, uint16_t pid) {
     static const struct device_id_t compatible[] = {
         {SONY_INST_VID, DJ_TURNTABLE_PID}};
@@ -76,7 +71,7 @@ int turntable_driver_ops_init(usb_input_device_t *device) {
 
 int turntable_driver_ops_disconnect(usb_input_device_t *device) {
 
-    return turntable_driver_update_leds(device);
+    return 0;
 }
 
 
