@@ -182,14 +182,14 @@ struct WPADData_t {
             union {
                 uint16_t buttons;
                 struct {
-                    uint16_t : 1;
+                    uint16_t velocity1 : 1;
                     uint16_t : 1;
                     uint16_t : 1;
                     uint16_t minus : 1;
                     uint16_t : 1;
                     uint16_t plus : 1;
                     uint16_t : 1;
-                    uint16_t : 1;
+                    uint16_t velocity0 : 1;
                     uint16_t orange : 1;
                     uint16_t red : 1;
                     uint16_t yellow : 1;
@@ -201,10 +201,28 @@ struct WPADData_t {
                 };
             };
             int16_t stick[2];
-            int16_t unused;
-            int16_t which;
-            uint8_t velocity;
-            uint8_t whammy;
+            uint16_t : 10;
+            uint16_t note6 : 1;
+            uint16_t : 5;
+            
+            uint16_t : 6;
+            uint16_t note3 : 1;
+            uint16_t note2 : 1;
+            uint16_t note1 : 1;
+            uint16_t note0 : 1;
+            uint16_t velocity6 : 1;
+            uint16_t : 5;
+            
+            uint8_t note5 : 1;
+            uint8_t note4 : 1;
+            uint8_t velocity5 : 1;
+            uint8_t velocity4 : 1;
+            uint8_t velocity3 : 1;
+            uint8_t : 3;
+
+            uint8_t : 4;
+            uint8_t velocity2 : 1;
+            uint8_t : 3;
         } drum;
         struct {
             union {
@@ -305,6 +323,16 @@ enum WPADExtension_t {
     WPAD_EXTENSION_TURNTABLE = 20,
     WPAD_EXTENSION_PRO_CONTROLLER = 31,
     WPAD_EXTENSION_UNKNOWN = 255,
+};
+
+enum WPADDrumNote_t {
+    KICK_PEDAL = 36,
+    RED = 38,
+    GREEN = 45,
+    YELLOW = 46,
+    BLUE = 48,
+    ORANGE = 49,
+    HI_HAT = 100
 };
 
 enum WPADPeripheralSpace_t {

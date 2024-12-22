@@ -43,6 +43,7 @@
         "stack": "c",
         "any": "c",
         "usb.h": "c",
-        "cstdarg": "c"
+        "cstdarg": "c",
+        "random": "c"
     }
 }

@@ -75,8 +75,48 @@ bool gh_drum_report_input(const struct drum_input_report *report, usb_input_devi
 	
     device->wpadData.extension_data.drum.stick[0] = 0;
     device->wpadData.extension_data.drum.stick[1] = 0;
-
-    // TODO: Velcocity
+    uint8_t velocity = 0x7F;
+    uint8_t note = 0x7F;
+    if (report->greenVelocity) {
+        note = GREEN;
+        velocity = report->greenVelocity; 
+    }
+    if (report->redVelocity) {
+        note = RED;
+        velocity = report->redVelocity; 
+    }
+    if (report->yellowVelocity) {
+        note = YELLOW;
+        velocity = report->yellowVelocity; 
+    }
+    if (report->blueVelocity) {
+        note = BLUE;
+        velocity = report->blueVelocity; 
+    }
+    if (report->orangeVelocity) {
+        note = ORANGE;
+        velocity = report->orangeVelocity; 
+    }
+    if (report->kickVelocity) {
+        note = KICK_PEDAL;
+        velocity = report->kickVelocity;
+    }
+    velocity = 0x7F - velocity;
+    note = 0x7F - note;
+    device->wpadData.extension_data.drum.velocity0 = !(velocity & (1 << 0));
+    device->wpadData.extension_data.drum.velocity1 = !(velocity & (1 << 1));
+    device->wpadData.extension_data.drum.velocity2 = !!(velocity & (1 << 2));
+    device->wpadData.extension_data.drum.velocity3 = !!(velocity & (1 << 3));
+    device->wpadData.extension_data.drum.velocity4 = !!(velocity & (1 << 4));
+    device->wpadData.extension_data.drum.velocity5 = !!(velocity & (1 << 5));
+    device->wpadData.extension_data.drum.velocity6 = !!(velocity & (1 << 6));
+    device->wpadData.extension_data.drum.note0 = !!(note & (1 << 0));
+    device->wpadData.extension_data.drum.note1 = !!(note & (1 << 1));
+    device->wpadData.extension_data.drum.note2 = !!(note & (1 << 2));
+    device->wpadData.extension_data.drum.note3 = !!(note & (1 << 3));
+    device->wpadData.extension_data.drum.note4 = !!(note & (1 << 4));
+    device->wpadData.extension_data.drum.note5 = !!(note & (1 << 5));
+    device->wpadData.extension_data.drum.note6 = !!(note & (1 << 6));
 
 	// UP
 	if (report->hat == 0 || report->hat == 1 || report->hat == 7) {
