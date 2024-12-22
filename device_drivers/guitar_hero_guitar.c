@@ -75,9 +75,10 @@ int gh_guitar_driver_ops_disconnect(usb_input_device_t *device) {
 }
 
 bool gh_guitar_report_input(const struct guitar_input_report *report, usb_input_device_t *device) {
-    device->wpadData.acceleration[0] = (int16_t)le16toh(report->acc_x) - 511;
-    device->wpadData.acceleration[1] = 511 - (int16_t)le16toh(report->acc_y);
-    device->wpadData.acceleration[2] = 511 - (int16_t)le16toh(report->acc_z);
+    // Remote is sideways!
+    device->wpadData.acceleration[1] = ((int16_t)le16toh(report->acc_x) - 511);
+    device->wpadData.acceleration[0] = (511 - (int16_t)le16toh(report->acc_y));
+    device->wpadData.acceleration[2] = (511 - (int16_t)le16toh(report->acc_z));
 
     device->wpadData.buttons = 0;
     device->wpadData.home = report->ps;

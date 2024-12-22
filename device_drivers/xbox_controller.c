@@ -366,7 +366,8 @@ bool xbox_controller_report_turntable_input(const XInputTurntable_Data_t *report
 }
 
 bool xbox_controller_report_gh_guitar_input(const XInputGuitarHeroGuitar_Data_t *report, usb_input_device_t *device) {
-    device->wpadData.acceleration[0] = (int16_t)le16toh(report->tilt) - 511;
+    // Guitar is sideways!
+    device->wpadData.acceleration[1] = ((int16_t)le16toh(report->tilt)) >> 8;
 
     device->wpadData.buttons = 0;
     device->wpadData.home = report->guide;

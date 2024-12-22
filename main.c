@@ -934,6 +934,7 @@ static void onDevGetDesc2(ios_ret_t ret, usr_t user) {
     }
 }
 static void onDevGetDesc1(ios_ret_t ret, usr_t user) {
+    printf_v("Get Desc ret: %d\r\n", ret);
     usb_input_device_t *device = (usb_input_device_t *)user;
     uint16_t size = __builtin_bswap16(dev_oh0_buffer[0]);
     printf_v("Desc size1: %02x\r\n", size);
@@ -941,6 +942,7 @@ static void onDevGetDesc1(ios_ret_t ret, usr_t user) {
 }
 
 static void onDevOpenUsbv0(ios_fd_t fd, usr_t usr) {
+    printf_v("USB FD: %02x\r\n", fd);
     usb_input_device_t *device = (usb_input_device_t *)usr;
     const usb_device_driver_t *driver = &xbox_controller_usb_device_driver;
     device->host_fd = fd;

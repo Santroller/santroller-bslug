@@ -18,16 +18,14 @@ struct drum_input_report {
     uint8_t select : 1;
 
     uint8_t hat;
-    uint8_t unused;
-    uint8_t unused2;
-    uint8_t whammy_bar;
-    uint8_t tap_bar;
-    uint8_t pressure_yellow;
-    uint8_t pressure_red;
-    uint8_t pressure_green;
-    uint8_t pressure_blue;
-    uint8_t pressure_kick;
-    uint8_t pressure_orange;
+    uint8_t unused1[8];
+
+    uint8_t yellowVelocity;
+    uint8_t redVelocity;
+    uint8_t greenVelocity;
+    uint8_t blueVelocity;
+    uint8_t kickVelocity;
+    uint8_t orangeVelocity;
     uint8_t unused3[2];
     uint16_t unused4[4];
 
