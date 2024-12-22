@@ -479,20 +479,20 @@ bool xbox_controller_report_drums_input(const XInputGuitarHeroDrums_Data_t *repo
     }
     velocity = 0x7F - velocity;
     note = 0x7F - note;
-    device->wpadData.extension_data.drum.velocity0 = !(velocity & (1 << 0));
-    device->wpadData.extension_data.drum.velocity1 = !(velocity & (1 << 1));
-    device->wpadData.extension_data.drum.velocity2 = !!(velocity & (1 << 2));
-    device->wpadData.extension_data.drum.velocity3 = !!(velocity & (1 << 3));
-    device->wpadData.extension_data.drum.velocity4 = !!(velocity & (1 << 4));
-    device->wpadData.extension_data.drum.velocity5 = !!(velocity & (1 << 5));
-    device->wpadData.extension_data.drum.velocity6 = !!(velocity & (1 << 6));
-    device->wpadData.extension_data.drum.note0 = !!(note & (1 << 0));
-    device->wpadData.extension_data.drum.note1 = !!(note & (1 << 1));
-    device->wpadData.extension_data.drum.note2 = !!(note & (1 << 2));
-    device->wpadData.extension_data.drum.note3 = !!(note & (1 << 3));
-    device->wpadData.extension_data.drum.note4 = !!(note & (1 << 4));
-    device->wpadData.extension_data.drum.note5 = !!(note & (1 << 5));
-    device->wpadData.extension_data.drum.note6 = !!(note & (1 << 6));
+    device->wpadData.extension_data.drum.velocity0 = ~velocity;
+    device->wpadData.extension_data.drum.velocity1 = ~velocity >> 1;
+    device->wpadData.extension_data.drum.velocity2 = velocity >> 2;
+    device->wpadData.extension_data.drum.velocity3 = velocity >> 3;
+    device->wpadData.extension_data.drum.velocity4 = velocity >> 4;
+    device->wpadData.extension_data.drum.velocity5 = velocity >> 5;
+    device->wpadData.extension_data.drum.velocity6 = velocity >> 6;
+    device->wpadData.extension_data.drum.note0 = note;
+    device->wpadData.extension_data.drum.note1 = note >> 1;
+    device->wpadData.extension_data.drum.note2 = note >> 2;
+    device->wpadData.extension_data.drum.note3 = note >> 3;
+    device->wpadData.extension_data.drum.note4 = note >> 4;
+    device->wpadData.extension_data.drum.note5 = note >> 5;
+    device->wpadData.extension_data.drum.note6 = note >> 6;
 
     device->wpadData.status = WPAD_STATUS_OK;
 

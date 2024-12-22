@@ -210,14 +210,14 @@ struct WPADData_t {
             uint16_t note2 : 1;
             uint16_t note1 : 1;
             uint16_t note0 : 1;
-            uint16_t velocity6 : 1;
+            uint16_t velocity3 : 1;
             uint16_t : 5;
             
             uint8_t note5 : 1;
             uint8_t note4 : 1;
+            uint8_t velocity6 : 1;
             uint8_t velocity5 : 1;
             uint8_t velocity4 : 1;
-            uint8_t velocity3 : 1;
             uint8_t : 3;
 
             uint8_t : 4;
