@@ -72,6 +72,7 @@ bool gh_drum_report_input(const struct drum_input_report *report, usb_input_devi
 	device->wpadData.extension_data.drum.pedal = report->kick;
 	device->wpadData.extension_data.drum.plus = report->start;
 	device->wpadData.extension_data.drum.minus = report->select;
+    device->wpadData.extension_data.drum.connected = WPAD_DRUM_HAS_VELOCITY;
 	
     device->wpadData.extension_data.drum.stick[0] = 0;
     device->wpadData.extension_data.drum.stick[1] = 0;
@@ -79,27 +80,24 @@ bool gh_drum_report_input(const struct drum_input_report *report, usb_input_devi
     uint8_t note = 0x7F;
     if (report->greenVelocity) {
         note = GREEN;
-        velocity = report->greenVelocity; 
-    }
-    if (report->redVelocity) {
+        velocity = report->greenVelocity;
+    } else if (report->redVelocity) {
         note = RED;
-        velocity = report->redVelocity; 
-    }
-    if (report->yellowVelocity) {
+        velocity = report->redVelocity;
+    } else if (report->yellowVelocity) {
         note = YELLOW;
-        velocity = report->yellowVelocity; 
-    }
-    if (report->blueVelocity) {
+        velocity = report->yellowVelocity;
+    } else if (report->blueVelocity) {
         note = BLUE;
-        velocity = report->blueVelocity; 
-    }
-    if (report->orangeVelocity) {
+        velocity = report->blueVelocity;
+    } else if (report->orangeVelocity) {
         note = ORANGE;
-        velocity = report->orangeVelocity; 
-    }
-    if (report->kickVelocity) {
+        velocity = report->orangeVelocity;
+    } else if (report->kickVelocity) {
         note = KICK_PEDAL;
         velocity = report->kickVelocity;
+    } else {
+        device->wpadData.extension_data.drum.connected = WPAD_DRUM_NO_VELOCITY;
     }
     velocity = 0x7F - velocity;
     note = 0x7F - note;

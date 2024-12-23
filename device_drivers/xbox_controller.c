@@ -451,31 +451,29 @@ bool xbox_controller_report_drums_input(const XInputGuitarHeroDrums_Data_t *repo
     device->wpadData.extension_data.drum.orange = report->orange;
     device->wpadData.extension_data.drum.plus = report->start;
     device->wpadData.extension_data.drum.minus = report->back;
+    device->wpadData.extension_data.drum.connected = WPAD_DRUM_HAS_VELOCITY;
     uint8_t velocity = 0x7F;
     uint8_t note = 0x7F;
     if (report->greenVelocity) {
         note = GREEN;
         velocity = report->greenVelocity;
-    }
-    if (report->redVelocity) {
+    } else if (report->redVelocity) {
         note = RED;
         velocity = report->redVelocity;
-    }
-    if (report->yellowVelocity) {
+    } else if (report->yellowVelocity) {
         note = YELLOW;
         velocity = report->yellowVelocity;
-    }
-    if (report->blueVelocity) {
+    } else if (report->blueVelocity) {
         note = BLUE;
         velocity = report->blueVelocity;
-    }
-    if (report->orangeVelocity) {
+    } else if (report->orangeVelocity) {
         note = ORANGE;
         velocity = report->orangeVelocity;
-    }
-    if (report->kickVelocity) {
+    } else if (report->kickVelocity) {
         note = KICK_PEDAL;
         velocity = report->kickVelocity;
+    } else {
+        device->wpadData.extension_data.drum.connected = WPAD_DRUM_NO_VELOCITY;
     }
     velocity = 0x7F - velocity;
     note = 0x7F - note;

@@ -220,7 +220,7 @@ struct WPADData_t {
             uint8_t velocity4 : 1;
             uint8_t : 3;
 
-            uint8_t : 4;
+            uint8_t connected: 4; // 0110 if there is a drum hit, 1111 otherwise
             uint8_t velocity2 : 1;
             uint8_t : 3;
         } drum;
@@ -341,6 +341,9 @@ enum WPADPeripheralSpace_t {
     WPAD_PERIPHERAL_SPACE_MOTIONPLUS,
     WPAD_PERIPHERAL_SPACE_DPD
 };
+
+#define WPAD_DRUM_HAS_VELOCITY 0b0110
+#define WPAD_DRUM_NO_VELOCITY 0b1111
 
 static inline size_t WPADDataFormatSize(WPADDataFormat_t format) {
     switch (format) {
