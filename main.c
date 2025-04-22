@@ -636,6 +636,7 @@ static inline int usb_hid_v5_ctrl_transfer_async(usb_input_device_t *device, uin
     vectors[0].len = sizeof(struct usb_hid_v5_transfer);
     vectors[1].data = rpData;
     vectors[1].len = wLength;
+    printf("ctrl transfer id: %02x\r\n", device->dev_id);
 
     return IOS_IoctlvAsync(device->host_fd, DEV_USB_HID5_IOCTL_CONTROL, 1 + out, 1 - out, vectors,
                            callback, device);
@@ -1256,7 +1257,7 @@ static void onDevUsbVenAttach5(ios_ret_t ret, usr_t vcount) {
                 if (device->dev_id == device_id && device->api_type == API_TYPE_VEN) {
                     break;
                 }
-                if (device->valid || device->real)
+                if (device->valid || device->real || device->waiting)
                     continue;
                 break;
             }
@@ -1307,7 +1308,7 @@ static void onDevUsbAttach5(ios_ret_t ret, usr_t vcount) {
                     if (device->dev_id == device_id && device->api_type == API_TYPE_HIDV5) {
                         break;
                     }
-                    if (device->valid || device->real)
+                    if (device->valid || device->real || device->waiting)
                         continue;
                     break;
                 }
@@ -1424,6 +1425,7 @@ static void onDevUsbVenParams5(ios_ret_t ret, usr_t user) {
         usb_configurationdesc *dev = (usb_configurationdesc *)(dev_usb_ven_buffer + 18);
         usb_interfacedesc *intf = (usb_interfacedesc *)(dev_usb_ven_buffer + 21);
         usb_endpointdesc *endp = (usb_endpointdesc *)(dev_usb_ven_buffer + 24);
+        printf_v("id: %02x\r\n", intf->bInterfaceNumber);
         printf_v("len: %02x\r\n", dev->wTotalLength);
         printf_v("class: %02x %02x %02x\r\n", intf->bInterfaceClass, intf->bInterfaceSubClass, intf->bInterfaceProtocol);
         device->type = 0;
@@ -1437,6 +1439,7 @@ static void onDevUsbVenParams5(ios_ret_t ret, usr_t user) {
             device->driver = &xbox_controller_usb_device_driver;
             device->type = XINPUT_TYPE_WIRELESS;
         }
+
         // X360 Wired will handle endpoints and init itself later
         if (device->driver != NULL && device->type != XINPUT_TYPE_WIRED) {
             for (int i = 0; i < intf->bNumEndpoints; i++) {
@@ -1471,7 +1474,7 @@ static void onDevUsbVenParams5(ios_ret_t ret, usr_t user) {
                 device->wiimote = lowest_free_slot;
                 device->valid = true;
             }
-        }
+        }   
         /* 0-7 are already correct :) */
         dev_usb_ven_buffer[8] = 0;
         dev_usb_ven_buffer[9] = 0;
@@ -1499,7 +1502,8 @@ static void onDevUsbVenParams5(ios_ret_t ret, usr_t user) {
         dev_usb_ven_buffer[31] = 0;
         for (int i = 0; i < ARRAY_SIZE(fake_devices); i++) {
             device = &fake_devices[i];
-            if (device->waiting && device->valid && device->api_type == API_TYPE_VEN) {
+            if (device->waiting && !device->valid && device->api_type == API_TYPE_VEN) {
+                printf_v("Resuming next device\r\n");
                 ret = sendVenResume5(onDevUsbVenResume5, device);
                 break;
             }

@@ -23,9 +23,9 @@ bool santroller_driver_ops_probe(uint16_t vid, uint16_t pid)
 int santroller_driver_ops_init(usb_input_device_t *device)
 {
 	// Send the ctrl transfer fakemote sends, to jump to PS3 mode. Not usually necessary but helps for dolphin
-	usb_device_driver_issue_ctrl_transfer_async(device, 0xa1, 0x01, 0x03f2, 0x00, device->usb_async_resp,
+	usb_device_driver_issue_ctrl_transfer_async(device, 0xa1, 0x01, 0x03f2, 2, device->usb_async_resp,
 							   0x11);
-	return -1;
+	return 1;
 }
 int santroller_driver_ops_disconnect(usb_input_device_t *device)
 {
@@ -46,7 +46,7 @@ int santroller_driver_ops_usb_async_resp(usb_input_device_t *device)
 
 const usb_device_driver_t santroller_usb_device_driver = {
 	.probe		= santroller_driver_ops_probe,
-    .hid = true,
+    .hid = false,
 	.init		= santroller_driver_ops_init,
 	.disconnect	= santroller_driver_ops_disconnect,
 	.usb_async_resp	= santroller_driver_ops_usb_async_resp,
